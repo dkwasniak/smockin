@@ -6,60 +6,48 @@
 
     <groupId>com.smockin</groupId>
     <artifactId>smockin</artifactId>
-    <version>2.20.3</version>
+    <version>2.21.0</version>
     <packaging>jar</packaging>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.18</version>
+        <version>3.5.12</version>
     </parent>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <java.version>11</java.version>
-        <spring-boot-test.version>3.0.8</spring-boot-test.version>
+        <java.version>17</java.version>
         <spark-core.version>2.9.4</spark-core.version>
-        <h2.version>2.3.232</h2.version>
-        <commons-lang3.version>3.14.0</commons-lang3.version>
-        <httpclient.version>4.5.14</httpclient.version>
-        <commons-io.version>2.17.0</commons-io.version>
-        <commons-email.version>1.6.0</commons-email.version>
-        <mockito-core.version>4.11.0</mockito-core.version>
+        <spark-jetty.version>9.4.56.v20240826</spark-jetty.version>
+        <h2.version>2.4.240</h2.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
+        <httpclient5.version>5.4.3</httpclient5.version>
+        <commons-io.version>2.19.0</commons-io.version>
+        <commons-email2-jakarta.version>2.0.0-M1</commons-email2-jakarta.version>
+        <mockito-core.version>5.23.0</mockito-core.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <raml-parser.version>1.0.47</raml-parser.version>
         <openapi-generator.version>7.13.0</openapi-generator.version>
-        <jasypt.version>1.9.2</jasypt.version>
-        <java-jwt.version>4.4.0</java-jwt.version>
-        <spring-boot-maven-plugin.version>2.7.18</spring-boot-maven-plugin.version>
+        <jasypt.version>1.9.3</jasypt.version>
+        <java-jwt.version>4.5.0</java-jwt.version>
+        <spring-boot-maven-plugin.version>3.5.12</spring-boot-maven-plugin.version>
         <owasp.plugin.version>10.0.4</owasp.plugin.version>
         <lombok.version>1.18.42</lombok.version>
-        <s3mock.version>2.2.2</s3mock.version>
-        <aws-java-sdk-s3.version>1.12.768</aws-java-sdk-s3.version>
+        <aws-java-sdk-s3.version>1.12.778</aws-java-sdk-s3.version>
         <s3proxy.version>2.6.0</s3proxy.version>
-        <greenmail.version>1.6.15</greenmail.version>
-        <jackson-databind.version>2.15.4</jackson-databind.version>
+        <greenmail.version>2.1.8</greenmail.version>
         <java-ngrok.version>2.1.0</java-ngrok.version>
         <graaljs.version>25.0.2</graaljs.version>
     </properties>
 
     <dependencies>
 
-        <!-- Spring -->
+        <!-- Spring (uses Tomcat to avoid Jetty version conflict with SparkJava) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-starter-tomcat</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jetty</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -70,28 +58,42 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- Jackson (JSON) -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson-databind.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-            <version>${jackson-databind.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>${jackson-databind.version}</version>
-        </dependency>
-
-        <!-- Spark (HTTP Server) -->
+        <!-- Spark (HTTP Server for mock engine, uses embedded Jetty 9.4) -->
         <dependency>
             <groupId>com.sparkjava</groupId>
             <artifactId>spark-core</artifactId>
             <version>${spark-core.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty.websocket</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- Pinned Jetty 9.4 for SparkJava (not managed by Spring Boot BOM) -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${spark-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-webapp</artifactId>
+            <version>${spark-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty.websocket</groupId>
+            <artifactId>websocket-server</artifactId>
+            <version>${spark-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty.websocket</groupId>
+            <artifactId>websocket-servlet</artifactId>
+            <version>${spark-jetty.version}</version>
         </dependency>
 
         <!-- DB -->
@@ -112,14 +114,14 @@
             <version>${commons-lang3.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <version>${httpclient.version}</version>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <version>${httpclient5.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>fluent-hc</artifactId>
-            <version>${httpclient.version}</version>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5-fluent</artifactId>
+            <version>${httpclient5.version}</version>
         </dependency>
         <dependency>
             <groupId>commons-io</groupId>
@@ -128,8 +130,8 @@
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
-            <artifactId>commons-email</artifactId>
-            <version>${commons-email.version}</version>
+            <artifactId>commons-email2-jakarta</artifactId>
+            <version>${commons-email2-jakarta.version}</version>
         </dependency>
 
         <!-- Lombok -->
@@ -228,14 +230,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <version>${spring-boot-test.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.junit.vintage</groupId>
             <artifactId>junit-vintage-engine</artifactId>
-            <version>5.10.3</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>

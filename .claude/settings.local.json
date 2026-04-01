@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn help:describe -Dgoal=test -Ddetail=true 2>&1 | head -50 || echo \"Maven help test\")",
+      "WebSearch",
+      "Bash(mvn compile:*)",
+      "Bash(export PATH=$PATH:/usr/local/bin:/opt/homebrew/bin)",
+      "Read(//Applications/**)"
+    ]
+  }
+}

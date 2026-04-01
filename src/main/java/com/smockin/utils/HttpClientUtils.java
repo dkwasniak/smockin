@@ -1,9 +1,9 @@
 package com.smockin.utils;
 
 import com.smockin.admin.dto.HttpClientCallDTO;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.message.BasicNameValuePair;
+import org.apache.hc.core5.http.NameValuePair;
+import org.apache.hc.client5.http.fluent.Request;
+import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 

@@ -2,7 +2,7 @@ package com.smockin.admin.persistence.entity;
 
 import lombok.Data;
 
-import javax.persistence.*;
+import jakarta.persistence.*;
 
 
 /**

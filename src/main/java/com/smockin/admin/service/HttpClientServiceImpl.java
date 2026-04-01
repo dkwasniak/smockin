@@ -7,19 +7,16 @@ import com.smockin.mockserver.dto.MockServerState;
 import com.smockin.utils.HttpClientUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.fluent.Executor;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.config.RegistryBuilder;
-import org.apache.http.conn.socket.ConnectionSocketFactory;
-import org.apache.http.conn.socket.PlainConnectionSocketFactory;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.hc.client5.http.fluent.Executor;
+import org.apache.hc.client5.http.fluent.Request;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -124,14 +121,14 @@ public class HttpClientServiceImpl implements HttpClientService {
 
     HttpClientResponseDTO get(final HttpClientCallDTO reqDto) throws IOException {
 
-        final Request request = Request.Get(reqDto.getUrl());
+        final Request request = Request.get(reqDto.getUrl());
 
         return executeRequest(request, reqDto, isHttps(reqDto.getUrl()));
     }
 
     HttpClientResponseDTO post(final HttpClientCallDTO reqDto) throws IOException {
 
-        final Request request = Request.Post(reqDto.getUrl());
+        final Request request = Request.post(reqDto.getUrl());
 
         HttpClientUtils.handleRequestData(request, reqDto.getHeaders(), reqDto);
 
@@ -140,7 +137,7 @@ public class HttpClientServiceImpl implements HttpClientService {
 
     HttpClientResponseDTO put(final HttpClientCallDTO reqDto) throws IOException {
 
-        final Request request = Request.Put(reqDto.getUrl());
+        final Request request = Request.put(reqDto.getUrl());
 
         HttpClientUtils.handleRequestData(request, reqDto.getHeaders(), reqDto);
 
@@ -149,14 +146,14 @@ public class HttpClientServiceImpl implements HttpClientService {
 
     HttpClientResponseDTO delete(final HttpClientCallDTO reqDto) throws IOException {
 
-        final Request request = Request.Delete(reqDto.getUrl());
+        final Request request = Request.delete(reqDto.getUrl());
 
         return executeRequest(request, reqDto, isHttps(reqDto.getUrl()));
     }
 
     HttpClientResponseDTO patch(final HttpClientCallDTO reqDto) throws IOException {
 
-        final Request request = Request.Patch(reqDto.getUrl())
+        final Request request = Request.patch(reqDto.getUrl())
                 .bodyByteArray((reqDto.getBody() != null) ? reqDto.getBody().getBytes() : null);
 
         return executeRequest(request, reqDto, isHttps(reqDto.getUrl()));
@@ -209,18 +206,18 @@ public class HttpClientServiceImpl implements HttpClientService {
 
     }
 
-    Map<String, String> extractResponseHeaders(final HttpResponse httpResponse) {
+    Map<String, String> extractResponseHeaders(final ClassicHttpResponse httpResponse) {
 
         return new HashMap<String, String>() {
             {
-                for (Header h : httpResponse.getAllHeaders()) {
+                for (Header h : httpResponse.getHeaders()) {
                     put(h.getName(), h.getValue());
                 }
             }
         };
     }
 
-    String extractResponseBody(final HttpResponse httpResponse) throws IOException {
+    String extractResponseBody(final ClassicHttpResponse httpResponse) throws IOException {
 
         return IOUtils.toString(httpResponse.getEntity().getContent(), StandardCharsets.UTF_8.name());
     }
@@ -232,26 +229,26 @@ public class HttpClientServiceImpl implements HttpClientService {
         duplicateContentLengthBugFix(reqDto);
         applyRequestHeaders(request, reqDto.getHeaders());
 
-        final HttpResponse httpResponse;
+        final ClassicHttpResponse httpResponse;
 
         if (isHttpsCall) {
 
             try {
                 final Executor executor = Executor.newInstance(noSslHttpClient());
-                httpResponse = executor.execute(request).returnResponse();
+                httpResponse = (ClassicHttpResponse) executor.execute(request).returnResponse();
             } catch (KeyManagementException | NoSuchAlgorithmException | KeyStoreException e) {
                 throw new IOException();
             }
 
         } else {
 
-            httpResponse = request.execute().returnResponse();
+            httpResponse = (ClassicHttpResponse) request.execute().returnResponse();
         }
 
         return new HttpClientResponseDTO(
-                httpResponse.getStatusLine().getStatusCode(),
+                httpResponse.getCode(),
                 (httpResponse.getEntity() != null)
-                    ? httpResponse.getEntity().getContentType().getValue()
+                    ? httpResponse.getEntity().getContentType()
                     : null, // i.e. 204
                 extractResponseHeaders(httpResponse),
                 (httpResponse.getEntity() != null)
@@ -267,15 +264,14 @@ public class HttpClientServiceImpl implements HttpClientService {
                 .build();
 
         return HttpClientBuilder.create()
-                .setSSLContext(sslContext)
                 .setConnectionManager(
-                        new PoolingHttpClientConnectionManager(
-                                RegistryBuilder.<ConnectionSocketFactory>create()
-                                        .register("http", PlainConnectionSocketFactory.INSTANCE)
-                                        .register("https", new SSLConnectionSocketFactory(sslContext,
-                                                NoopHostnameVerifier.INSTANCE))
-                                        .build()
-                        ))
+                        PoolingHttpClientConnectionManagerBuilder.create()
+                                .setSSLSocketFactory(
+                                        SSLConnectionSocketFactoryBuilder.create()
+                                                .setSslContext(sslContext)
+                                                .setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                                                .build())
+                                .build())
                 .build();
     }
 

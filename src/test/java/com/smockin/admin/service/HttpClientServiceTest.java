@@ -5,13 +5,12 @@ import com.smockin.admin.dto.response.HttpClientResponseDTO;
 import com.smockin.admin.exception.ValidationException;
 import com.smockin.admin.persistence.enums.RestMethodEnum;
 import org.apache.commons.io.IOUtils;
-import org.apache.http.Header;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.StatusLine;
-import org.apache.http.client.fluent.Request;
-import org.apache.http.client.fluent.Response;
-import org.apache.http.message.BasicHeader;
+import org.apache.hc.client5.http.fluent.Request;
+import org.apache.hc.client5.http.fluent.Response;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.message.BasicHeader;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -41,13 +40,10 @@ public class HttpClientServiceTest {
     private Response response;
 
     @Mock
-    private HttpResponse httpResponse;
+    private ClassicHttpResponse httpResponse;
 
     @Mock
     private HttpEntity httpEntity;
-
-    @Mock
-    private StatusLine statusLine;
 
     @Spy
     @InjectMocks
@@ -136,7 +132,7 @@ public class HttpClientServiceTest {
     public void extractResponseHeadersTest() {
 
         // Setup
-        Mockito.when(httpResponse.getAllHeaders()).thenReturn(new Header[] { new BasicHeader("one", "1"), new BasicHeader("two", "2") });
+        Mockito.when(httpResponse.getHeaders()).thenReturn(new Header[] { new BasicHeader("one", "1"), new BasicHeader("two", "2") });
 
         // Test
         final Map<String, String> result = httpClientServiceImpl.extractResponseHeaders(httpResponse);
@@ -171,15 +167,12 @@ public class HttpClientServiceTest {
 
         Mockito.when(request.execute()).thenReturn(response);
         Mockito.when(response.returnResponse()).thenReturn(httpResponse);
-        Mockito.when(httpResponse.getAllHeaders()).thenReturn(new Header[] { new BasicHeader("one", "1") });
+        Mockito.when(httpResponse.getHeaders()).thenReturn(new Header[] { new BasicHeader("one", "1") });
 
-        Mockito.when(httpResponse.getStatusLine()).thenReturn(statusLine);
-        Mockito.when(statusLine.getStatusCode()).thenReturn(200);
+        Mockito.when(httpResponse.getCode()).thenReturn(200);
 
         Mockito.when(httpResponse.getEntity()).thenReturn(httpEntity);
-        final Header contentTypeHeader = Mockito.mock(Header.class);
-        Mockito.when(httpResponse.getEntity().getContentType()).thenReturn(contentTypeHeader);
-        Mockito.when(contentTypeHeader.getValue()).thenReturn("text/plain");
+        Mockito.when(httpEntity.getContentType()).thenReturn("text/plain");
         Mockito.when(httpEntity.getContent()).thenReturn(IOUtils.toInputStream("Foo", Charset.defaultCharset()));
 
         // Test
