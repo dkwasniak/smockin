@@ -12,7 +12,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.11</version>
+        <version>2.7.18</version>
     </parent>
 
     <properties>
@@ -22,25 +22,24 @@
         <spring-boot-test.version>3.0.8</spring-boot-test.version>
         <spark-core.version>2.9.4</spark-core.version>
         <h2.version>2.3.232</h2.version>
-        <hikaricp.version>2.6.1</hikaricp.version>
-        <commons-lang3.version>3.5</commons-lang3.version>
-        <httpclient.version>4.5.13</httpclient.version>
+        <commons-lang3.version>3.14.0</commons-lang3.version>
+        <httpclient.version>4.5.14</httpclient.version>
         <commons-io.version>2.17.0</commons-io.version>
-        <commons-email.version>1.5</commons-email.version>
-        <mockito-core.version>3.2.0</mockito-core.version>
-        <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
+        <commons-email.version>1.6.0</commons-email.version>
+        <mockito-core.version>4.11.0</mockito-core.version>
+        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <raml-parser.version>1.0.47</raml-parser.version>
         <openapi-generator.version>7.13.0</openapi-generator.version>
         <jasypt.version>1.9.2</jasypt.version>
-        <java-jwt.version>3.4.0</java-jwt.version>
-        <spring-boot-maven-plugin.version>2.7.11</spring-boot-maven-plugin.version>
-        <owasp.plugin.version>5.3.0</owasp.plugin.version>
+        <java-jwt.version>4.4.0</java-jwt.version>
+        <spring-boot-maven-plugin.version>2.7.18</spring-boot-maven-plugin.version>
+        <owasp.plugin.version>10.0.4</owasp.plugin.version>
         <lombok.version>1.18.42</lombok.version>
         <s3mock.version>2.2.2</s3mock.version>
         <aws-java-sdk-s3.version>1.12.768</aws-java-sdk-s3.version>
         <s3proxy.version>2.6.0</s3proxy.version>
-        <greenmail.version>1.6.5</greenmail.version>
-        <jackson-databind.version>2.14.2</jackson-databind.version>
+        <greenmail.version>1.6.15</greenmail.version>
+        <jackson-databind.version>2.15.4</jackson-databind.version>
         <java-ngrok.version>2.1.0</java-ngrok.version>
         <graaljs.version>25.0.2</graaljs.version>
     </properties>
@@ -77,6 +76,16 @@
             <artifactId>jackson-databind</artifactId>
             <version>${jackson-databind.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson-databind.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson-databind.version}</version>
+        </dependency>
 
         <!-- Spark (HTTP Server) -->
         <dependency>
@@ -94,7 +103,6 @@
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
-            <version>${hikaricp.version}</version>
         </dependency>
 
         <!-- Apache Commons -->
@@ -227,7 +235,7 @@
         <dependency>
             <groupId>org.junit.vintage</groupId>
             <artifactId>junit-vintage-engine</artifactId>
-            <version>5.8.2</version>
+            <version>5.10.3</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>
@@ -286,7 +294,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>properties-maven-plugin</artifactId>
-                <version>1.0.0</version>
+                <version>1.2.1</version>
                 <executions>
                     <execution>
                         <goals>

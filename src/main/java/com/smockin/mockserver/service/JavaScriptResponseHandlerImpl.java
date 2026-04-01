@@ -6,10 +6,11 @@ import com.smockin.admin.service.SmockinUserService;
 import com.smockin.admin.service.UserKeyValueDataService;
 import com.smockin.mockserver.service.dto.RestfulResponseDTO;
 import com.smockin.utils.GeneralUtils;
-import jdk.nashorn.api.scripting.NashornScriptEngineFactory;
-import jdk.nashorn.api.scripting.ScriptObjectMirror;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.utils.URLEncodedUtils;
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,13 +19,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import spark.Request;
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
 import javax.script.ScriptException;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -68,16 +67,17 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
                     "Looks like there is an issue with the Javascript driving this mock " + ex.getMessage());
         }
 
-        if (!(engineResponse instanceof ScriptObjectMirror)) {
+        if (!(engineResponse instanceof Map)) {
             return new RestfulResponseDTO(500,
                     "text/plain",
                     "Looks like there is an issue with the Javascript driving this mock!");
         }
 
-        final ScriptObjectMirror response = (ScriptObjectMirror) engineResponse;
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> response = (Map<String, Object>) engineResponse;
 
         return new RestfulResponseDTO(
-                (int) response.get("status"),
+                ((Number) response.get("status")).intValue(),
                 (String) response.get("contentType"),
                 (String) response.get("body"),
                 convertResponseHeaders(response));
@@ -86,7 +86,53 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
     Object executeJS(final String js) throws ScriptException {
         if (logger.isDebugEnabled())
             logger.debug(js);
-        return buildEngine().eval(js);
+        try (Context context = buildContext()) {
+            loadEngineExtensions(context);
+            Value result = context.eval("js", js);
+            return unwrapValue(result);
+        } catch (Exception ex) {
+            if (ex instanceof ScriptException) throw (ScriptException) ex;
+            throw new ScriptException(ex.getMessage());
+        }
+    }
+
+    private Object unwrapValue(Value value) {
+        if (value == null || value.isNull()) return null;
+        if (value.isString()) return value.asString();
+        if (value.isNumber()) {
+            if (value.fitsInInt()) return value.asInt();
+            if (value.fitsInLong()) return value.asLong();
+            return value.asDouble();
+        }
+        if (value.isBoolean()) return value.asBoolean();
+        if (value.hasMembers()) return valueToMap(value);
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> valueToMap(Value value) {
+        Map<String, Object> map = new HashMap<>();
+        for (String key : value.getMemberKeys()) {
+            Value member = value.getMember(key);
+            if (member == null || member.isNull()) {
+                map.put(key, null);
+            } else if (member.isString()) {
+                map.put(key, member.asString());
+            } else if (member.isNumber()) {
+                if (member.fitsInInt()) {
+                    map.put(key, member.asInt());
+                } else {
+                    map.put(key, member.asDouble());
+                }
+            } else if (member.isBoolean()) {
+                map.put(key, member.asBoolean());
+            } else if (member.hasMembers()) {
+                map.put(key, valueToMap(member));
+            } else {
+                map.put(key, null);
+            }
+        }
+        return map;
     }
 
     String populateRequestObjectWithInbound(final Request req, final String mockPath, final String ctxPath) {
@@ -149,17 +195,20 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
                 .collect(Collectors.toMap(k -> k, k -> req.queryParams(k)));
     }
 
-    Set<Map.Entry<String, String>> convertResponseHeaders(final ScriptObjectMirror response) {
+    @SuppressWarnings("unchecked")
+    Set<Map.Entry<String, String>> convertResponseHeaders(final Map<String, Object> response) {
 
         final Object headersJS = response.get("headers");
 
         final Map<String, String> responseHeaders = new HashMap<>();
 
-        if (headersJS instanceof ScriptObjectMirror) {
-            ((ScriptObjectMirror) headersJS)
-                    .entrySet()
-                    .forEach(e ->
-                            responseHeaders.put(e.getKey(), (String)e.getValue()));
+        if (headersJS instanceof Map) {
+            ((Map<String, Object>) headersJS)
+                    .forEach((key, val) -> {
+                        if (val != null) {
+                            responseHeaders.put(key, val.toString());
+                        }
+                    });
         }
 
         return responseHeaders.entrySet();
@@ -291,48 +340,32 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
         return null;
     }
 
-    private ScriptEngine buildEngine() {
-
-        final ScriptEngine engine = new NashornScriptEngineFactory()
-                .getScriptEngine(
-                        engineSecurityArgs,
-                        null,
-                            (s) -> false);
-
-        loadEngineExtensions(engine);
-        applyEngineBindings(engine);
-
-        return engine;
+    private Context buildContext() {
+        return Context.newBuilder("js")
+                .allowHostAccess(HostAccess.NONE)
+                .allowHostClassLookup(className -> false)
+                .allowIO(false)
+                .allowCreateThread(false)
+                .allowNativeAccess(false)
+                .option("js.ecmascript-version", "2020")
+                .option("js.print", "true")
+                .build();
     }
 
-    private void loadEngineExtensions(final ScriptEngine engine) {
-
-        try {
-
-            engine.eval(new FileReader(getExtensionsFilePath("from-xml.min.js"))); // XML support
-
-        } catch (ScriptException | FileNotFoundException e) {
+    private void loadEngineExtensions(final Context context) {
+        try (InputStreamReader reader = new InputStreamReader(
+                getClass().getClassLoader().getResourceAsStream(extensionsDir + "from-xml.min.js"),
+                StandardCharsets.UTF_8)) {
+            StringBuilder sb = new StringBuilder();
+            char[] buf = new char[4096];
+            int len;
+            while ((len = reader.read(buf)) != -1) {
+                sb.append(buf, 0, len);
+            }
+            context.eval("js", sb.toString());
+        } catch (IOException e) {
             logger.error("Error loading JS extensions", e);
         }
-    }
-
-    private String getExtensionsFilePath(final String extensionsFileName) {
-
-        return getClass()
-                .getClassLoader()
-                .getResource(extensionsDir + extensionsFileName)
-                .getFile();
-    }
-
-    // A few security restrictions...
-    private void applyEngineBindings(final ScriptEngine engine) {
-
-        final Bindings bindings = engine.getBindings(ScriptContext.ENGINE_SCOPE);
-        bindings.remove("exit");
-        bindings.remove("java");
-        bindings.remove("javax");
-        bindings.remove("sun");
-
     }
 
     String removeLineBreaks(final String input) {

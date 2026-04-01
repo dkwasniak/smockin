@@ -7,7 +7,7 @@
 # docker run --name smockin -d -p 8000:8000 -p 8001:8001 -p 8002:8002 -p 8003:8003 mgallina/smockin:2203
 #
 
-FROM adoptopenjdk/openjdk11:jre-11.0.19_7-ubuntu
+FROM eclipse-temurin:11-jre
 ARG APP_VERSION_ARG='2.20.3'
 RUN mkdir /app
 RUN mkdir /app/db
