@@ -19,8 +19,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
-        <spark-core.version>2.9.4</spark-core.version>
-        <spark-jetty.version>9.4.56.v20240826</spark-jetty.version>
+        <javalin.version>6.6.0</javalin.version>
+        <javalin-jetty.version>11.0.26</javalin-jetty.version>
         <h2.version>2.4.240</h2.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <httpclient5.version>5.4.3</httpclient5.version>
@@ -44,7 +44,7 @@
 
     <dependencies>
 
-        <!-- Spring (uses Tomcat to avoid Jetty version conflict with SparkJava) -->
+        <!-- Spring (uses Tomcat) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -58,42 +58,52 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- Spark (HTTP Server for mock engine, uses embedded Jetty 9.4) -->
+        <!-- Javalin (HTTP Server for mock engine, successor to SparkJava) -->
         <dependency>
-            <groupId>com.sparkjava</groupId>
-            <artifactId>spark-core</artifactId>
-            <version>${spark-core.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.eclipse.jetty</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.eclipse.jetty.websocket</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+            <version>${javalin.version}</version>
         </dependency>
-        <!-- Pinned Jetty 9.4 for SparkJava (not managed by Spring Boot BOM) -->
+        <!-- Pin Jetty 11 core artifacts for Javalin 6 (Spring Boot BOM manages Jetty 12 which is incompatible) -->
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-server</artifactId>
-            <version>${spark-jetty.version}</version>
+            <version>${javalin-jetty.version}</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-webapp</artifactId>
-            <version>${spark-jetty.version}</version>
+            <version>${javalin-jetty.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.jetty.websocket</groupId>
-            <artifactId>websocket-server</artifactId>
-            <version>${spark-jetty.version}</version>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>${javalin-jetty.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.eclipse.jetty.websocket</groupId>
-            <artifactId>websocket-servlet</artifactId>
-            <version>${spark-jetty.version}</version>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-xml</artifactId>
+            <version>${javalin-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-security</artifactId>
+            <version>${javalin-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-http</artifactId>
+            <version>${javalin-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-io</artifactId>
+            <version>${javalin-jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-util</artifactId>
+            <version>${javalin-jetty.version}</version>
         </dependency>
 
         <!-- DB -->

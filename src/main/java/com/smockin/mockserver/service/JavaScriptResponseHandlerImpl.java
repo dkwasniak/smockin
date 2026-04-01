@@ -8,7 +8,6 @@ import com.smockin.mockserver.service.dto.RestfulResponseDTO;
 import com.smockin.utils.GeneralUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hc.core5.net.URLEncodedUtils;
-import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
@@ -17,7 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
+import io.javalin.http.Context;
 
 import javax.script.ScriptException;
 import java.io.IOException;
@@ -44,7 +43,7 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
     private final static String CARRIAGE_RETURN_REGEX = "\\r\\n|\\r|\\n";
     private final String extensionsDir = "js-extensions/";
 
-    public RestfulResponseDTO executeUserResponse(final Request req, final RestfulMock mock) {
+    public RestfulResponseDTO executeUserResponse(final Context ctx, final RestfulMock mock) {
         logger.debug("executeUserResponse called");
 
         Object engineResponse;
@@ -53,8 +52,8 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
 
             engineResponse = executeJS(
                     defaultRequestObject
-                        + populateRequestObjectWithInbound(req, mock.getPath(), mock.getCreatedBy().getCtxPath())
-                        + populateKVPs(req, mock)
+                        + populateRequestObjectWithInbound(ctx, mock.getPath(), mock.getCreatedBy().getCtxPath())
+                        + populateKVPs(ctx, mock)
                         + keyValuePairFindFunc
                         + defaultResponseObject
                         + userResponseFunctionInvoker
@@ -86,7 +85,7 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
     Object executeJS(final String js) throws ScriptException {
         if (logger.isDebugEnabled())
             logger.debug(js);
-        try (Context context = buildContext()) {
+        try (org.graalvm.polyglot.Context context = buildContext()) {
             loadEngineExtensions(context);
             Value result = context.eval("js", js);
             return unwrapValue(result);
@@ -135,28 +134,28 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
         return map;
     }
 
-    String populateRequestObjectWithInbound(final Request req, final String mockPath, final String ctxPath) {
+    String populateRequestObjectWithInbound(final Context ctx, final String mockPath, final String ctxPath) {
 
         final Map<String, String> reqHeaders =
-                req.headers()
+                ctx.headerMap().keySet()
                     .stream()
-                    .collect(Collectors.toMap(k -> k, k -> req.headers(k)));
+                    .collect(Collectors.toMap(k -> k, k -> ctx.header(k)));
 
         final StringBuilder reqObject = new StringBuilder();
 
         reqObject.append("request.path=")
-                .append("'").append(req.pathInfo()).append("'")
+                .append("'").append(ctx.path()).append("'")
                 .append("; ");
 
-        if (StringUtils.isNotBlank(req.body())) {
+        if (StringUtils.isNotBlank(ctx.body())) {
             reqObject.append("request.body=")
-                    .append("'").append(removeLineBreaks(req.body())).append("'")
+                    .append("'").append(removeLineBreaks(ctx.body())).append("'")
                     .append(";");
         }
 
-        final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), req.pathInfo(), ctxPath);
+        final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), ctx.path(), ctxPath);
         applyMapValuesToStringBuilder("request.pathVars", GeneralUtils.findAllPathVars(sanitizedInboundPath, mockPath), reqObject);
-        applyMapValuesToStringBuilder("request.parameters", extractAllRequestParams(req), reqObject);
+        applyMapValuesToStringBuilder("request.parameters", extractAllRequestParams(ctx), reqObject);
         applyMapValuesToStringBuilder("request.headers", reqHeaders, reqObject);
 
         return reqObject.toString();
@@ -177,22 +176,21 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
                         .append(";"));
     }
 
-    Map<String, String> extractAllRequestParams(final Request req) {
+    Map<String, String> extractAllRequestParams(final Context ctx) {
 
-        // Java Spark does not provide a convenient way of extracting form based request parameters,
-        // so have to parse these manually.
-        if (req.contentType() != null
-                && (req.contentType().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                ||  req.contentType().contains(MediaType.MULTIPART_FORM_DATA_VALUE))) {
+        if (ctx.contentType() != null
+                && (ctx.contentType().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                ||  ctx.contentType().contains(MediaType.MULTIPART_FORM_DATA_VALUE))) {
 
-            return URLEncodedUtils.parse(req.body(), Charset.defaultCharset())
+            return URLEncodedUtils.parse(ctx.body(), Charset.defaultCharset())
                     .stream()
                     .collect(HashMap::new, (m, v) -> m.put(v.getName(), v.getValue()), HashMap::putAll);
         }
 
-        return req.queryParams()
+        return ctx.queryParamMap()
+                .keySet()
                 .stream()
-                .collect(Collectors.toMap(k -> k, k -> req.queryParams(k)));
+                .collect(Collectors.toMap(k -> k, k -> ctx.queryParam(k)));
     }
 
     @SuppressWarnings("unchecked")
@@ -214,7 +212,7 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
         return responseHeaders.entrySet();
     }
 
-    String populateKVPs(final Request req, final RestfulMock mock) throws ScriptException {
+    String populateKVPs(final Context ctx, final RestfulMock mock) throws ScriptException {
         logger.debug("populateKVPs called");
 
         final String handleResponseFunc = GeneralUtils.removeJsComments(mock.getJavaScriptHandler().getSyntax());
@@ -235,7 +233,7 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
             }
 
             final int closingParenthesisPos = StringUtils.indexOf(handleResponseFunc, ")", startPos);
-            final String sanitizedKey = findKvpKey(startPos, closingParenthesisPos, req, mock, keyValuePairFuncPrefix, handleResponseFunc);
+            final String sanitizedKey = findKvpKey(startPos, closingParenthesisPos, ctx, mock, keyValuePairFuncPrefix, handleResponseFunc);
 
             if (sanitizedKey != null) {
                 final UserKeyValueDataDTO userKeyValueDataDTO = userKeyValueDataService.loadByKey(sanitizedKey, mockOwnerUserId);
@@ -254,7 +252,7 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
         return defaultKeyValuePairStoreObject;
     }
 
-    private String findKvpKey(final int startPos, final int closingParenthesisPos, final Request req, final RestfulMock mock, final String keyValuePairFuncPrefix, final String handleResponseFunc)
+    private String findKvpKey(final int startPos, final int closingParenthesisPos, final Context ctx, final RestfulMock mock, final String keyValuePairFuncPrefix, final String handleResponseFunc)
             throws ScriptException {
         logger.debug("findKvpKey called");
 
@@ -285,32 +283,32 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
             if (requestObjectField.startsWith("pathVars")) {
 
                 final String pathVarsObjectField = StringUtils.remove(requestObjectField, "pathVars").trim();
-                final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), req.pathInfo(), mock.getCreatedBy().getCtxPath());
+                final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), ctx.path(), mock.getCreatedBy().getCtxPath());
                 sanitizedKey = GeneralUtils.findAllPathVars(sanitizedInboundPath, mock.getPath())
                         .get(extractObjectField(StringUtils.lowerCase(pathVarsObjectField)));
 
             } else if ("body".equals(requestObjectField)) {
 
-                if (StringUtils.isBlank(req.body())) {
+                if (StringUtils.isBlank(ctx.body())) {
                     throw new ScriptException(invalidMsgPrefix + "request.body is undefined");
                 }
 
-                sanitizedKey = removeLineBreaks(req.body());
+                sanitizedKey = removeLineBreaks(ctx.body());
 
             } else if (requestObjectField.startsWith("headers")) {
 
                 final String headersObjectField = StringUtils.remove(requestObjectField, "headers").trim();
 
-                sanitizedKey = req.headers()
+                sanitizedKey = ctx.headerMap().keySet()
                         .stream()
-                        .collect(Collectors.toMap(k -> k, k -> req.headers(k)))
+                        .collect(Collectors.toMap(k -> k, k -> ctx.header(k)))
                         .get(extractObjectField(headersObjectField));
 
             } else if (requestObjectField.startsWith("parameters")) {
 
                 final String parametersObjectField = StringUtils.remove(requestObjectField, "parameters").trim();
 
-                sanitizedKey = extractAllRequestParams(req).get(extractObjectField(parametersObjectField));
+                sanitizedKey = extractAllRequestParams(ctx).get(extractObjectField(parametersObjectField));
 
             } else {
                 throw new ScriptException(invalidMsgPrefix + "Unable to determine request based key look up");
@@ -340,8 +338,8 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
         return null;
     }
 
-    private Context buildContext() {
-        return Context.newBuilder("js")
+    private org.graalvm.polyglot.Context buildContext() {
+        return org.graalvm.polyglot.Context.newBuilder("js")
                 .allowHostAccess(HostAccess.NONE)
                 .allowHostClassLookup(className -> false)
                 .allowIO(false)
@@ -352,7 +350,7 @@ public class JavaScriptResponseHandlerImpl implements JavaScriptResponseHandler 
                 .build();
     }
 
-    private void loadEngineExtensions(final Context context) {
+    private void loadEngineExtensions(final org.graalvm.polyglot.Context context) {
         try (InputStreamReader reader = new InputStreamReader(
                 getClass().getClassLoader().getResourceAsStream(extensionsDir + "from-xml.min.js"),
                 StandardCharsets.UTF_8)) {

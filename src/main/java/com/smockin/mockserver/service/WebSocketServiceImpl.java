@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
 
 import java.io.IOException;
 import java.util.*;
@@ -89,7 +88,7 @@ public class WebSocketServiceImpl implements WebSocketService {
 
         final String path = mockedRestServerEngineUtils.buildUserPath(wsMock);
 
-        session.setIdleTimeout((wsMock.getWebSocketTimeoutInMillis() > 0) ? wsMock.getWebSocketTimeoutInMillis() : MAX_IDLE_TIMEOUT_MILLIS);
+        session.setIdleTimeout(java.time.Duration.ofMillis((wsMock.getWebSocketTimeoutInMillis() > 0) ? wsMock.getWebSocketTimeoutInMillis() : MAX_IDLE_TIMEOUT_MILLIS));
 
         final Set<SessionIdWrapper> sessions = sessionMap.computeIfAbsent(path, k -> new HashSet<>());
         final String assignedId = GeneralUtils.generateUUID();
@@ -148,8 +147,7 @@ public class WebSocketServiceImpl implements WebSocketService {
 
                 // check if a rules is matched
                 boolean ruleMatched = false;
-                Request req = new sMockinRequest(message);
-                RestfulResponseDTO response = ruleEngine.process(req, wsMock.getRules());
+                RestfulResponseDTO response = ruleEngine.process(message, wsMock.getRules());
                 if (response != null && response.getResponseBody() != null) {
                     ruleMatched = true;
                     // Only one session should match this key - needs verification
@@ -269,20 +267,6 @@ public class WebSocketServiceImpl implements WebSocketService {
         }
 
         return null;
-    }
-
-    private class sMockinRequest extends Request {
-    	String body;
-    	
-    	sMockinRequest(String value) {
-    		body = value;
-    	}
-    	
-    	@Override
-    	public String body() {
-    		return body;
-    	}
-    	
     }
 
     /**

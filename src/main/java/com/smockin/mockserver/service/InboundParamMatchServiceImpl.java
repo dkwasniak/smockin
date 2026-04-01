@@ -13,7 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import spark.Request;
+import io.javalin.http.Context;
 
 import java.text.SimpleDateFormat;
 
@@ -35,7 +35,7 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
     private static final String GENERAL_ERROR = "Error processing inbound param matching. Please check your token syntax";
 
     @Override
-    public String enrichWithInboundParamMatches(final Request req,
+    public String enrichWithInboundParamMatches(final Context ctx,
                                                 final String mockPath,
                                                 final String responseBody,
                                                 final String userCtxPath,
@@ -45,7 +45,7 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
             return null;
         }
 
-        final String sanitizedUserCtxInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), req.pathInfo(), userCtxPath);
+        final String sanitizedUserCtxInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), ctx.path(), userCtxPath);
 
         String enrichedResponseBody = responseBody;
 
@@ -62,7 +62,7 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
             final String r;
 
             try {
-                r = processParamMatch(req, mockPath, enrichedResponseBody, sanitizedUserCtxInboundPath, mockOwnerUserId);
+                r = processParamMatch(ctx, mockPath, enrichedResponseBody, sanitizedUserCtxInboundPath, mockOwnerUserId);
             } catch (Throwable ex) {
                 logger.error(ex.getMessage());
                 throw new InboundParamMatchException(GENERAL_ERROR);
@@ -80,7 +80,7 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
         return enrichedResponseBody;
     }
 
-    String processParamMatch(final Request req,
+    String processParamMatch(final Context ctx,
                              final String mockPath,
                              final String responseBody,
                              final String sanitizedUserCtxInboundPath,
@@ -99,15 +99,15 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
 
         // Determine the matching token type, is it a requestHeader, requestParameter, pathVar, etc...
         if (ParamMatchTypeEnum.lookUpKvp.equals(paramMatchType)) {
-            return processKvp(matchStartingPosition, sanitizedUserCtxInboundPath, mockPath, req, responseBody, mockOwnerUserId);
+            return processKvp(matchStartingPosition, sanitizedUserCtxInboundPath, mockPath, ctx, responseBody, mockOwnerUserId);
         }
 
         if (ParamMatchTypeEnum.requestHeader.equals(paramMatchType)) {
-            return processRequestHeader(matchStartingPosition, req, responseBody);
+            return processRequestHeader(matchStartingPosition, ctx, responseBody);
         }
 
         if (ParamMatchTypeEnum.requestParameter.equals(paramMatchType)) {
-            return processRequestParameter(matchStartingPosition, req, responseBody);
+            return processRequestParameter(matchStartingPosition, ctx, responseBody);
         }
 
         if (ParamMatchTypeEnum.pathVar.equals(paramMatchType)) {
@@ -117,7 +117,7 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
         if (ParamMatchTypeEnum.requestBody.equals(paramMatchType)) {
             return StringUtils.replaceIgnoreCase(responseBody,
                     ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestBody,
-                    (req.body() != null) ? req.body() : "",
+                    (ctx.body() != null) ? ctx.body() : "",
                     1);
         }
 
@@ -183,7 +183,7 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
     String processKvp(final int matchStartingPosition,
                       final String sanitizedUserCtxInboundPath,
                       final String mockPath,
-                      final Request req,
+                      final Context ctx,
                       final String responseBody,
                       final long mockOwnerUserId) {
 
@@ -219,16 +219,16 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
 
             switch (kvpMatchResult.getLeft()) {
                 case requestHeader:
-                    sanitisedKvpKey = GeneralUtils.findHeaderIgnoreCase(req, sanitiseArgName(nestedRequestKey));
+                    sanitisedKvpKey = GeneralUtils.findHeaderIgnoreCase(ctx, sanitiseArgName(nestedRequestKey));
                     break;
                 case requestParameter:
-                    sanitisedKvpKey = GeneralUtils.extractRequestParamByName(req, sanitiseArgName(nestedRequestKey));
+                    sanitisedKvpKey = GeneralUtils.extractRequestParamByName(ctx, sanitiseArgName(nestedRequestKey));
                     break;
                 case pathVar:
                     sanitisedKvpKey = GeneralUtils.findPathVarIgnoreCase(sanitizedUserCtxInboundPath, mockPath, sanitiseArgName(nestedRequestKey));
                     break;
                 case requestBody:
-                    sanitisedKvpKey = req.body();
+                    sanitisedKvpKey = ctx.body();
                     break;
                 default:
                     sanitisedKvpKey = null;
@@ -250,10 +250,10 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
                 1);
     }
 
-    String processRequestHeader(final int matchStartingPosition, final Request req, final String responseBody) {
+    String processRequestHeader(final int matchStartingPosition, final Context ctx, final String responseBody) {
 
         final String headerName = extractArgName(matchStartingPosition, ParamMatchTypeEnum.requestHeader, responseBody, false);
-        final String headerValue = GeneralUtils.findHeaderIgnoreCase(req, sanitiseArgName(headerName));
+        final String headerValue = GeneralUtils.findHeaderIgnoreCase(ctx, sanitiseArgName(headerName));
 
         if (logger.isDebugEnabled()) {
             logger.debug("raw header: " + headerName);
@@ -268,11 +268,11 @@ public class InboundParamMatchServiceImpl implements InboundParamMatchService {
     }
 
     String processRequestParameter(final int matchStartingPosition,
-                                   final Request req,
+                                   final Context ctx,
                                    final String responseBody) {
 
         final String requestParamName = extractArgName(matchStartingPosition, ParamMatchTypeEnum.requestParameter, responseBody, false);
-        final String requestParamValue = GeneralUtils.extractRequestParamByName(req, sanitiseArgName(requestParamName));
+        final String requestParamValue = GeneralUtils.extractRequestParamByName(ctx, sanitiseArgName(requestParamName));
 
         if (logger.isDebugEnabled()) {
             logger.debug("RAW request param: " + requestParamName);

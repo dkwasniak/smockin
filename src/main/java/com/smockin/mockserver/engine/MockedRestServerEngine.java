@@ -8,9 +8,10 @@ import com.smockin.admin.websocket.LiveLoggingHandler;
 import com.smockin.mockserver.dto.*;
 import com.smockin.mockserver.exception.MockServerException;
 import com.smockin.mockserver.service.*;
-import com.smockin.mockserver.service.ws.SparkWebSocketEchoService;
 import com.smockin.utils.GeneralUtils;
 import com.smockin.utils.LiveLoggingUtils;
+import io.javalin.Javalin;
+import io.javalin.http.Context;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,11 +20,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
-import spark.Response;
-import spark.Spark;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -72,6 +70,7 @@ public class MockedRestServerEngine {
 
 
     private static final String SPARK_WILDCARD_PATH = "/*";
+    private Javalin app;
 
     // Server state
     private final Object serverStateMonitor = new Object();
@@ -126,14 +125,7 @@ public class MockedRestServerEngine {
 
             serverSideEventService.interruptAndClearAllHeartBeatThreads();
 
-            Spark.stop();
-
-            // Having dug around the source code, 'Spark.stop()' runs off a different thread when stopping the server and removing it's state such as routes, etc.
-            // This means that calling 'Spark.port()' immediately after stop, results in an IllegalStateException, as the
-            // 'initialized' flag is checked in the current thread and is still marked as true.
-            // (The error thrown: java.lang.IllegalStateException: This must be done before route mapping has begun)
-            // Short of editing the Spark source to fix this, I have therefore had to add this hack to buy the 'stop' thread time to complete.
-            Thread.sleep(3000);
+            app.stop();
 
             synchronized (serverStateMonitor) {
                 serverState.setRunning(false);
@@ -154,10 +146,7 @@ public class MockedRestServerEngine {
 
             clearState();
 
-            Spark.init();
-
-            // Blocks the current thread (using a CountDownLatch under the hood) until the server is fully initialised.
-            Spark.awaitInitialization();
+            app.start(port);
 
             synchronized (serverStateMonitor) {
                 serverState.setRunning(true);
@@ -176,66 +165,81 @@ public class MockedRestServerEngine {
         if (logger.isDebugEnabled())
             logger.debug(config.toString());
 
-        Spark.port(config.getPort());
-        Spark.threadPool(config.getMaxThreads(), config.getMinThreads(), config.getTimeOutMillis());
+        app = Javalin.create(javalinConfig -> {
+            javalinConfig.jetty.defaultPort = config.getPort();
+            javalinConfig.jetty.modifyServer(server -> {
+                final org.eclipse.jetty.util.thread.QueuedThreadPool threadPool =
+                        new org.eclipse.jetty.util.thread.QueuedThreadPool(
+                                config.getMaxThreads(), config.getMinThreads(), config.getTimeOutMillis());
+                server.addBean(threadPool);
+            });
+        });
     }
 
     void buildWebSocketEndpoints(final boolean isMultiUserMode) {
 
-        Spark.webSocket(SPARK_WILDCARD_PATH, new SparkWebSocketEchoService(webSocketService, isMultiUserMode));
+        app.ws(SPARK_WILDCARD_PATH, ws -> {
+            ws.onConnect(ctx -> webSocketService.registerSession(ctx.session, isMultiUserMode));
+            ws.onClose(ctx -> webSocketService.removeSession(ctx.session));
+            ws.onMessage(ctx -> {
+                if (com.smockin.mockserver.service.enums.WebSocketCommandEnum.SMOCKIN_ID.name().equals(ctx.message())) {
+                    ctx.session.getRemote().sendString(webSocketService.getExternalId(ctx.session));
+                    return;
+                }
+                webSocketService.respondToMessage(ctx.session, ctx.message());
+            });
+        });
     }
 
     private void applyTrafficLogging(final boolean isUsingProxyMode) {
 
         // Live logging filter
-        Spark.before((request, response) -> {
+        app.before(ctx -> {
 
-            if (request.raw().getHeader(webSocketService.WS_SEC_WEBSOCKET_KEY) != null) {
+            if (ctx.req().getHeader(webSocketService.WS_SEC_WEBSOCKET_KEY) != null) {
                 return;
             }
 
             final String traceId = GeneralUtils.generateUUID();
 
-            request.attribute(GeneralUtils.LOG_REQ_ID, traceId);
-            response.raw()
-                    .addHeader(GeneralUtils.LOG_REQ_ID, traceId);
+            ctx.attribute(GeneralUtils.LOG_REQ_ID, traceId);
+            ctx.res().addHeader(GeneralUtils.LOG_REQ_ID, traceId);
 
-            final Map<String, String> reqHeaders = request
-                    .headers()
+            final Map<String, String> reqHeaders = ctx.headerMap().keySet()
                     .stream()
-                    .collect(Collectors.toMap(h -> h, h -> request.headers(h)));
+                    .collect(Collectors.toMap(h -> h, h -> ctx.header(h)));
 
             reqHeaders.put(GeneralUtils.LOG_REQ_ID, traceId);
 
             liveLoggingHandler.broadcast(
                     LiveLoggingUtils.buildLiveLogInboundDTO(
-                        request.attribute(GeneralUtils.LOG_REQ_ID),
-                        request.requestMethod(),
-                        request.pathInfo(),
+                        ctx.attribute(GeneralUtils.LOG_REQ_ID),
+                        ctx.method().name(),
+                        ctx.path(),
                         reqHeaders,
-                        request.body(),
+                        ctx.body(),
                         isUsingProxyMode,
-                        GeneralUtils.extractAllRequestParams(request)));
+                        GeneralUtils.extractAllRequestParams(ctx)));
         });
 
-        Spark.afterAfter((request, response) -> {
+        app.after(ctx -> {
 
-            if (request.raw().getHeader(webSocketService.WS_SEC_WEBSOCKET_KEY) != null
-                    || serverSideEventService.SSE_EVENT_STREAM_HEADER.equals(response.raw().getHeader(HttpHeaders.CONTENT_TYPE))) {
+            if (ctx.req().getHeader(webSocketService.WS_SEC_WEBSOCKET_KEY) != null
+                    || serverSideEventService.SSE_EVENT_STREAM_HEADER.equals(ctx.res().getHeader(HttpHeaders.CONTENT_TYPE))) {
                 return;
             }
 
-            final Map<String, String> respHeaders = mockedRestServerEngineUtils.extractResponseHeadersAsMap(response);
+            final Map<String, String> respHeaders = mockedRestServerEngineUtils.extractResponseHeadersAsMap(ctx);
 
-            respHeaders.put(GeneralUtils.LOG_REQ_ID, request.attribute(GeneralUtils.LOG_REQ_ID));
+            respHeaders.put(GeneralUtils.LOG_REQ_ID, ctx.attribute(GeneralUtils.LOG_REQ_ID));
 
             liveLoggingHandler.broadcast(
                     LiveLoggingUtils.buildLiveLogOutboundDTO(
-                        request.attribute(GeneralUtils.LOG_REQ_ID),
-                        request.pathInfo(),
-                        response.raw().getStatus(),
+                        ctx.attribute(GeneralUtils.LOG_REQ_ID),
+                        ctx.path(),
+                        ctx.res().getStatus(),
                         respHeaders,
-                        response.body(),
+                        ctx.result(),
                         isUsingProxyMode));
         });
 
@@ -245,103 +249,83 @@ public class MockedRestServerEngine {
         logger.debug("buildGlobalHttpEndpointsHandler called");
 
         // HEAD
-        Spark.head(GeneralUtils.PATH_WILDCARD, (request, response) -> {
-
-            processResponse(request, response, isMultiUserMode, proxyModeEnabled.get());
-            checkForAndHandleBlockSwapAndMock(request, response, isMultiUserMode, proxyModeEnabled.get());
-
-            return "";
+        app.head(GeneralUtils.PATH_WILDCARD, ctx -> {
+            processResponse(ctx, isMultiUserMode, proxyModeEnabled.get());
+            checkForAndHandleBlockSwapAndMock(ctx, isMultiUserMode, proxyModeEnabled.get());
         });
 
         // GET
-        Spark.get(GeneralUtils.PATH_WILDCARD, (request, response) -> {
-
-            if (isWebSocketUpgradeRequest(request)) {
-                response.status(HttpStatus.OK.value());
-                return null;
+        app.get(GeneralUtils.PATH_WILDCARD, ctx -> {
+            if (isWebSocketUpgradeRequest(ctx)) {
+                ctx.status(HttpStatus.OK.value());
+                return;
             }
 
-            final String responseBody = processResponse(request, response, isMultiUserMode, proxyModeEnabled.get());
+            final String responseBody = processResponse(ctx, isMultiUserMode, proxyModeEnabled.get());
 
             final Optional<String> amendmentOpt =
-                    checkForAndHandleBlockSwapAndMock(request, response, isMultiUserMode, proxyModeEnabled.get());
+                    checkForAndHandleBlockSwapAndMock(ctx, isMultiUserMode, proxyModeEnabled.get());
 
-            return (amendmentOpt.isPresent())
-                    ? amendmentOpt.get()
-                    : responseBody;
+            ctx.result((amendmentOpt.isPresent()) ? amendmentOpt.get() : (responseBody != null ? responseBody : ""));
         });
 
         // POST
-        Spark.post(GeneralUtils.PATH_WILDCARD, (request, response) -> {
-
-            final String responseBody = processResponse(request, response, isMultiUserMode, proxyModeEnabled.get());
+        app.post(GeneralUtils.PATH_WILDCARD, ctx -> {
+            final String responseBody = processResponse(ctx, isMultiUserMode, proxyModeEnabled.get());
 
             final Optional<String> amendmentOpt =
-                    checkForAndHandleBlockSwapAndMock(request, response, isMultiUserMode, proxyModeEnabled.get());
+                    checkForAndHandleBlockSwapAndMock(ctx, isMultiUserMode, proxyModeEnabled.get());
 
-            return (amendmentOpt.isPresent())
-                    ? amendmentOpt.get()
-                    : responseBody;
+            ctx.result((amendmentOpt.isPresent()) ? amendmentOpt.get() : (responseBody != null ? responseBody : ""));
         });
 
         // PUT
-        Spark.put(GeneralUtils.PATH_WILDCARD, (request, response) -> {
-
-            final String responseBody = processResponse(request, response, isMultiUserMode, proxyModeEnabled.get());
+        app.put(GeneralUtils.PATH_WILDCARD, ctx -> {
+            final String responseBody = processResponse(ctx, isMultiUserMode, proxyModeEnabled.get());
 
             final Optional<String> amendmentOpt =
-                    checkForAndHandleBlockSwapAndMock(request, response, isMultiUserMode, proxyModeEnabled.get());
+                    checkForAndHandleBlockSwapAndMock(ctx, isMultiUserMode, proxyModeEnabled.get());
 
-            return (amendmentOpt.isPresent())
-                    ? amendmentOpt.get()
-                    : responseBody;
+            ctx.result((amendmentOpt.isPresent()) ? amendmentOpt.get() : (responseBody != null ? responseBody : ""));
         });
 
         // DELETE
-        Spark.delete(GeneralUtils.PATH_WILDCARD, (request, response) -> {
-
-            final String responseBody = processResponse(request, response, isMultiUserMode, proxyModeEnabled.get());
+        app.delete(GeneralUtils.PATH_WILDCARD, ctx -> {
+            final String responseBody = processResponse(ctx, isMultiUserMode, proxyModeEnabled.get());
 
             final Optional<String> amendmentOpt =
-                    checkForAndHandleBlockSwapAndMock(request, response, isMultiUserMode, proxyModeEnabled.get());
+                    checkForAndHandleBlockSwapAndMock(ctx, isMultiUserMode, proxyModeEnabled.get());
 
-            return (amendmentOpt.isPresent())
-                    ? amendmentOpt.get()
-                    : responseBody;
+            ctx.result((amendmentOpt.isPresent()) ? amendmentOpt.get() : (responseBody != null ? responseBody : ""));
         });
 
         // PATCH
-        Spark.patch(GeneralUtils.PATH_WILDCARD, (request, response) -> {
-
-            final String responseBody = processResponse(request, response, isMultiUserMode, proxyModeEnabled.get());
+        app.patch(GeneralUtils.PATH_WILDCARD, ctx -> {
+            final String responseBody = processResponse(ctx, isMultiUserMode, proxyModeEnabled.get());
 
             final Optional<String> amendmentOpt =
-                    checkForAndHandleBlockSwapAndMock(request, response, isMultiUserMode, proxyModeEnabled.get());
+                    checkForAndHandleBlockSwapAndMock(ctx, isMultiUserMode, proxyModeEnabled.get());
 
-            return (amendmentOpt.isPresent())
-                    ? amendmentOpt.get()
-                    : responseBody;
+            ctx.result((amendmentOpt.isPresent()) ? amendmentOpt.get() : (responseBody != null ? responseBody : ""));
         });
 
     }
 
-    String processResponse(final Request request,
-                   final Response response,
+    String processResponse(final Context ctx,
                    final boolean isMultiUserMode,
                    final boolean isProxyMode) {
 
-        return mockedRestServerEngineUtils.loadMockedResponse(request, response, isMultiUserMode, isProxyMode)
+        return mockedRestServerEngineUtils.loadMockedResponse(ctx, isMultiUserMode, isProxyMode)
                 .orElseGet(() ->
-                        handleNotFoundResponse(response));
+                        handleNotFoundResponse(ctx));
     }
 
-    Optional<String> checkForAndHandleBlockSwapAndMock(final Request request,
-                                                       final Response response,
+    Optional<String> checkForAndHandleBlockSwapAndMock(final Context ctx,
                                                        final boolean isMultiUserMode,
                                                        final boolean isProxyMode)
             throws InterruptedException {
 
-        if (blockLoggingResponse(request, response, isProxyMode)) {
+        if (blockLoggingResponse(ctx, isProxyMode)) {
 
             logger.debug("Endpoint match made. Blocking response...");
 
@@ -352,7 +336,7 @@ public class MockedRestServerEngine {
                     // Wait for response amendment for this request (by traceId)
                     responseBlockingMonitor.wait();
 
-                    final String traceId = request.attribute(GeneralUtils.LOG_REQ_ID);
+                    final String traceId = ctx.attribute(GeneralUtils.LOG_REQ_ID);
 
                     // Release request if liveBlocking is disabled at any stage
                     if (!liveBlockingModeEnabled.get()) {
@@ -370,19 +354,19 @@ public class MockedRestServerEngine {
 
                                     if (p.getMethod().isPresent()) {
 
-                                        return request.requestMethod().equalsIgnoreCase(p.getMethod().get().name())
-                                                && StringUtils.equals(request.pathInfo(), p.getPathPattern());
+                                        return ctx.method().name().equalsIgnoreCase(p.getMethod().get().name())
+                                                && StringUtils.equals(ctx.path(), p.getPathPattern());
                                     }
 
                                     // Is Admin
                                     if (GeneralUtils.URL_PATH_SEPARATOR.equals(p.getPathPattern())) {
                                         // Nasty solution to a problem of how do we identify the call is to an admin's mock...
                                         // TODO This will improve when we update isInboundPathMultiUserPath to use a cache instead.
-                                        final String userCtxPathSegment = mockedRestServerEngineUtils.extractMultiUserCtxPathSegment(request.pathInfo());
+                                        final String userCtxPathSegment = mockedRestServerEngineUtils.extractMultiUserCtxPathSegment(ctx.path());
                                         return !mockedRestServerEngineUtils.isInboundPathMultiUserPath(userCtxPathSegment);
                                     }
 
-                                    return StringUtils.startsWith(request.pathInfo(), p.getPathPattern());
+                                    return StringUtils.startsWith(ctx.path(), p.getPathPattern());
                                 })
                         ) {
                             break;
@@ -405,7 +389,7 @@ public class MockedRestServerEngine {
                     // Could be no amendment is provided (in which case this request will default to the original response)
                     if (responseAmendmentOpt.isPresent()) {
 
-                        final String body = amendResponse(responseAmendmentOpt, response);
+                        final String body = amendResponse(responseAmendmentOpt, ctx);
 
                         return Optional.of(body);
                     }
@@ -420,13 +404,13 @@ public class MockedRestServerEngine {
     }
 
     private String amendResponse(final Optional<LiveloggingUserOverrideResponse> responseAmendmentOpt,
-                               final Response response) {
+                               final Context ctx) {
 
         final LiveloggingUserOverrideResponse responseAmendment = responseAmendmentOpt.get();
 
         if (!responseAmendment.getResponseHeaders().isEmpty()) {
 
-            final HttpServletResponse httpServletResponse = response.raw();
+            final HttpServletResponse httpServletResponse = ctx.res();
 
             responseAmendment
                 .getResponseHeaders()
@@ -451,36 +435,35 @@ public class MockedRestServerEngine {
 
         }
 
-        response.status(responseAmendment.getStatus());
-        response.body(responseAmendment.getBody());
+        ctx.status(responseAmendment.getStatus());
+        ctx.result(responseAmendment.getBody());
 
         return responseAmendment.getBody();
     }
 
-    private String handleNotFoundResponse(final Response response) {
+    private String handleNotFoundResponse(final Context ctx) {
 
-        response.status(HttpStatus.NOT_FOUND.value());
+        ctx.status(HttpStatus.NOT_FOUND.value());
 
         return "";
     }
 
-    private boolean isWebSocketUpgradeRequest(final Request request) {
+    private boolean isWebSocketUpgradeRequest(final Context ctx) {
 
-        final Set<String> headerNames = request.headers();
+        final Map<String, String> headerMap = ctx.headerMap();
 
-        return headerNames.contains(HttpHeaders.UPGRADE)
-                && headerNames.contains("Sec-WebSocket-Key")
-                && "websocket".equalsIgnoreCase(request.headers(HttpHeaders.UPGRADE));
+        return headerMap.containsKey(HttpHeaders.UPGRADE)
+                && headerMap.containsKey("Sec-WebSocket-Key")
+                && "websocket".equalsIgnoreCase(ctx.header(HttpHeaders.UPGRADE));
     }
 
-    boolean blockLoggingResponse(final Request request,
-                          final Response response,
+    boolean blockLoggingResponse(final Context ctx,
                           final boolean proxyMode) {
 
         if (logger.isDebugEnabled()) {
             logger.debug("liveBlockEnabled: " + liveBlockingModeEnabled.get());
-            logger.debug("inbound method: " + request.requestMethod());
-            logger.debug("inbound path: " + request.pathInfo());
+            logger.debug("inbound method: " + ctx.method().name());
+            logger.debug("inbound path: " + ctx.path());
         }
 
         if (this.liveBlockingModeEnabled.get()) {
@@ -489,17 +472,17 @@ public class MockedRestServerEngine {
             if (liveBlockPathsRef.get()
                     .stream()
                     .anyMatch(p ->
-                            p.getMethod().name().equalsIgnoreCase(request.requestMethod())
-                                    && GeneralUtils.matchPaths(p.getPath(), request.pathInfo()))) {
+                            p.getMethod().name().equalsIgnoreCase(ctx.method().name())
+                                    && GeneralUtils.matchPaths(p.getPath(), ctx.path()))) {
 
                 // If so then send response details to live logging console via WS...
                 liveLoggingHandler.broadcast(
                         LiveLoggingUtils.buildLiveLogInterceptedResponseDTO(
-                                request.attribute(GeneralUtils.LOG_REQ_ID),
-                                request.pathInfo(),
-                                response.raw().getStatus(),
-                                mockedRestServerEngineUtils.extractResponseHeadersAsMap(response),
-                                response.body(),
+                                ctx.attribute(GeneralUtils.LOG_REQ_ID),
+                                ctx.path(),
+                                ctx.res().getStatus(),
+                                mockedRestServerEngineUtils.extractResponseHeadersAsMap(ctx),
+                                ctx.result(),
                                 proxyMode));
 
                 return true;
@@ -528,26 +511,26 @@ public class MockedRestServerEngine {
             return;
         }
 
-        Spark.options(SPARK_WILDCARD_PATH, (request, response) -> {
+        app.options(SPARK_WILDCARD_PATH, ctx -> {
 
-            final String accessControlRequestHeaders = request.headers(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS);
+            final String accessControlRequestHeaders = ctx.header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS);
 
             if (accessControlRequestHeaders != null) {
-                response.header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, accessControlRequestHeaders);
+                ctx.header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, accessControlRequestHeaders);
             }
 
-            final String accessControlRequestMethod = request.headers(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD);
+            final String accessControlRequestMethod = ctx.header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD);
 
             if (accessControlRequestMethod != null) {
 
-                response.header(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, accessControlRequestMethod);
+                ctx.header(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, accessControlRequestMethod);
             }
 
-            return HttpStatus.OK.name();
+            ctx.result(HttpStatus.OK.name());
         });
 
-        Spark.before((request, response) ->
-            response.header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, GeneralUtils.PATH_WILDCARD));
+        app.before(ctx ->
+            ctx.header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, GeneralUtils.PATH_WILDCARD));
 
     }
 

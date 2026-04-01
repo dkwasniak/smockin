@@ -48,7 +48,7 @@ public final class HttpClientUtils {
             return;
         }
 
-        request.bodyByteArray((reqDto.getBody() != null) ? reqDto.getBody().getBytes() : null);
+        request.bodyByteArray(reqDto.getBody() != null ? reqDto.getBody().getBytes() : new byte[0]);
 
     }
 

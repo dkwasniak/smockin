@@ -18,8 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
-import spark.Response;
+import io.javalin.http.Context;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -55,21 +54,21 @@ public class ServerSideEventServiceImpl implements ServerSideEventService {
     private LiveLoggingHandler liveLoggingHandler;
 
     @Override
-    public void register(final String path, final long heartBeatMillis, final boolean proxyPushIdOnConnect, final Request request, final Response response) throws IOException {
+    public void register(final String path, final long heartBeatMillis, final boolean proxyPushIdOnConnect, final Context ctx) throws IOException {
         logger.debug("register called");
 
         final String clientId = GeneralUtils.generateUUID();
-        final String traceId = request.attribute(GeneralUtils.LOG_REQ_ID);
+        final String traceId = ctx.attribute(GeneralUtils.LOG_REQ_ID);
 
-        applyHeaders(response);
+        applyHeaders(ctx);
 
         // Register client and build messages collection
         clients.computeIfAbsent(clientId, k ->
                 new ClientSseData(path, Thread.currentThread(), GeneralUtils.getCurrentDate()));
 
-        liveLoggingHandler.broadcast(LiveLoggingUtils.buildLiveLogOutboundDTO(traceId, path, response.status(), null, "SSE established (clientId: " + clientId + ")", false));
+        liveLoggingHandler.broadcast(LiveLoggingUtils.buildLiveLogOutboundDTO(traceId, path, ctx.statusCode(), null, "SSE established (clientId: " + clientId + ")", false));
 
-        initHeartBeat(clientId, heartBeatMillis, proxyPushIdOnConnect, traceId, path, response);
+        initHeartBeat(clientId, heartBeatMillis, proxyPushIdOnConnect, traceId, path, ctx);
     }
 
     @Override
@@ -137,19 +136,19 @@ public class ServerSideEventServiceImpl implements ServerSideEventService {
         clients.clear();
     }
 
-    void applyHeaders(final Response res) {
+    void applyHeaders(final Context ctx) {
 
        // Set SSE related headers
-       res.header(HttpHeaders.CONTENT_TYPE, SSE_EVENT_STREAM_HEADER);
-       res.header(HttpHeaders.CACHE_CONTROL, "no-cache");
+       ctx.header(HttpHeaders.CONTENT_TYPE, SSE_EVENT_STREAM_HEADER);
+       ctx.header(HttpHeaders.CACHE_CONTROL, "no-cache");
 
     }
 
-    void initHeartBeat(final String clientId, final long heartBeatMillis, final boolean proxyPushIdOnConnect, final String traceId, final String path, final Response response) throws IOException {
+    void initHeartBeat(final String clientId, final long heartBeatMillis, final boolean proxyPushIdOnConnect, final String traceId, final String path, final Context ctx) throws IOException {
         logger.debug("initHeartBeat called");
 
         // Get raw response Start stream
-        final PrintWriter writer = response.raw().getWriter();
+        final PrintWriter writer = ctx.res().getWriter();
 
         if (proxyPushIdOnConnect) {
             writer.write(messagePrefix + "clientId: " + clientId + messageSuffix);

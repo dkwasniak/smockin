@@ -72,7 +72,7 @@ public class CoreDataHandler {
             restServerConfig.setMaxThreads(100);
             restServerConfig.setMinThreads(10);
             restServerConfig.setTimeOutMillis(30000);
-            restServerConfig.setAutoStart(false);
+            restServerConfig.setAutoStart(true);
             restServerConfig.setProxyMode(false);
             restServerConfig.getNativeProperties().put(GeneralUtils.ENABLE_CORS_PARAM, "false");
 

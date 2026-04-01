@@ -1,0 +1,29 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: h2.Dockerfile
+    volumes:
+      - smockin-db:/h2/data
+    ports:
+      - "9092:9092"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_PORT: 9092
+      MULTI_USER_MODE: "TRUE"
+      AUTO_START_REST: "TRUE"
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+      - "8003:8003"
+
+volumes:
+  smockin-db:

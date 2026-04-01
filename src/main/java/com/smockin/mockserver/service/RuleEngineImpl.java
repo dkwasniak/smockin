@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
+import io.javalin.http.Context;
 
 import java.util.List;
 
@@ -33,7 +33,7 @@ public class RuleEngineImpl implements RuleEngine {
     private SmockinUserService smockinUserService;
 
 
-    public RestfulResponseDTO process(final Request req, final List<RestfulMockDefinitionRule> rules) {
+    public RestfulResponseDTO process(final Context ctx, final List<RestfulMockDefinitionRule> rules) {
         logger.debug("process called");
 
         for (RestfulMockDefinitionRule rule : rules) {
@@ -46,7 +46,7 @@ public class RuleEngineImpl implements RuleEngine {
 
                     final String inboundValue = extractInboundValue(condition.getRuleMatchingType(),
                             condition.getField(),
-                            req,
+                            ctx,
                             rule.getRestfulMock().getPath(),
                             rule.getRestfulMock().getCreatedBy().getCtxPath());
 
@@ -76,22 +76,59 @@ public class RuleEngineImpl implements RuleEngine {
         return null;
     }
 
-    String extractInboundValue(final RuleMatchingTypeEnum matchingType, final String fieldName, final Request req, final String mockPath, final String userCtxPath) {
+    public RestfulResponseDTO process(final String body, final List<RestfulMockDefinitionRule> rules) {
+        logger.debug("process (body overload) called");
+
+        for (RestfulMockDefinitionRule rule : rules) {
+
+            for (RestfulMockDefinitionRuleGroup group : rule.getConditionGroups()) {
+
+                int groupMatchCount = 0;
+
+                for (RestfulMockDefinitionRuleGroupCondition condition : group.getConditions()) {
+
+                    String inboundValue = null;
+
+                    if (condition.getRuleMatchingType() == RuleMatchingTypeEnum.REQUEST_BODY) {
+                        inboundValue = body;
+                    }
+
+                    if (ruleResolver.processRuleComparison(condition, inboundValue)) {
+                        groupMatchCount++;
+                    }
+
+                }
+
+                if (groupMatchCount == group.getConditions().size()) {
+
+                    GeneralUtils.checkForAndHandleSleep(rule.getSleepInMillis());
+
+                    return new RestfulResponseDTO(rule.getHttpStatusCode(), rule.getResponseContentType(), rule.getResponseBody(), rule.getResponseHeaders().entrySet());
+                }
+
+            }
+
+        }
+
+        return null;
+    }
+
+    String extractInboundValue(final RuleMatchingTypeEnum matchingType, final String fieldName, final Context ctx, final String mockPath, final String userCtxPath) {
 
         switch (matchingType) {
             case REQUEST_HEADER:
-                return req.headers(fieldName);
+                return ctx.header(fieldName);
             case REQUEST_PARAM:
-                return GeneralUtils.extractRequestParamByName(req, fieldName);
+                return GeneralUtils.extractRequestParamByName(ctx, fieldName);
             case REQUEST_BODY:
-                return req.body();
+                return ctx.body();
             case PATH_VARIABLE:
-                final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), req.pathInfo(), userCtxPath);
+                final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), ctx.path(), userCtxPath);
                 return GeneralUtils.findPathVarIgnoreCase(sanitizedInboundPath, mockPath, fieldName);
             case PATH_VARIABLE_WILD:
-                return RuleEngineUtils.matchOnPathVariable(fieldName, req);
+                return RuleEngineUtils.matchOnPathVariable(fieldName, ctx);
             case REQUEST_BODY_JSON_ANY:
-                return RuleEngineUtils.matchOnJsonField(fieldName, req.body(), req.pathInfo());
+                return RuleEngineUtils.matchOnJsonField(fieldName, ctx.body(), ctx.path());
             default:
                 throw new IllegalArgumentException("Unsupported Rule Matching Type : " + matchingType);
         }

@@ -69,7 +69,7 @@ public class HttpClientServiceImpl implements HttpClientService {
             }
 
         } catch (Exception ex) {
-            logger.debug("Error performing external call ", ex);
+            logger.error("Error performing external call", ex);
             return new HttpClientResponseDTO(HttpStatus.NOT_FOUND.value());
         }
 
@@ -154,7 +154,7 @@ public class HttpClientServiceImpl implements HttpClientService {
     HttpClientResponseDTO patch(final HttpClientCallDTO reqDto) throws IOException {
 
         final Request request = Request.patch(reqDto.getUrl())
-                .bodyByteArray((reqDto.getBody() != null) ? reqDto.getBody().getBytes() : null);
+                .bodyByteArray(reqDto.getBody() != null ? reqDto.getBody().getBytes() : new byte[0]);
 
         return executeRequest(request, reqDto, isHttps(reqDto.getUrl()));
     }
@@ -195,10 +195,6 @@ public class HttpClientServiceImpl implements HttpClientService {
      * BUG FIX: The apache client automatically sets CONTENT_LENGTH, causing a header duplication error.
      */
     void duplicateContentLengthBugFix(final HttpClientCallDTO reqDto) {
-
-        if (StringUtils.isBlank(reqDto.getBody())) {
-            return;
-        }
 
         if (reqDto.getHeaders().containsKey(HttpHeaders.CONTENT_LENGTH)) {
             reqDto.getHeaders().remove(HttpHeaders.CONTENT_LENGTH);

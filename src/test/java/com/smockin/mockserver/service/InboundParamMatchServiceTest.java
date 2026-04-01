@@ -20,13 +20,11 @@ import org.mockito.Mockito;
 import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.springframework.http.HttpMethod;
-import spark.Request;
+import io.javalin.http.Context;
+import io.javalin.http.HandlerType;
 
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.TimeZone;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Created by mgallina.
@@ -34,7 +32,7 @@ import java.util.UUID;
 @RunWith(MockitoJUnitRunner.class)
 public class InboundParamMatchServiceTest {
 
-    private Request request;
+    private Context request;
     private String sanitizedUserCtxInboundPath;
     private long userId;
 
@@ -57,7 +55,7 @@ public class InboundParamMatchServiceTest {
 
         sanitizedUserCtxInboundPath = "";
         userId = 1;
-        request = Mockito.mock(Request.class);
+        request = Mockito.mock(Context.class);
     }
 
     @Test
@@ -112,12 +110,10 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(name)";
 
-        Mockito.when(request.headers("name")).thenReturn("Roger");
-        Mockito.when(request.headers()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-            }
-        });
+        Mockito.when(request.header("name")).thenReturn("Roger");
+        Map<String, String> headerMap1 = new HashMap<>();
+        headerMap1.put("name", "Roger");
+        Mockito.when(request.headerMap()).thenReturn(headerMap1);
 
         // Test
         final String result = inboundParamMatchServiceImpl.processParamMatch(request, "/person/{name}", responseBody, sanitizedUserCtxInboundPath, userId);
@@ -132,12 +128,10 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(NAME)";
 
-        Mockito.when(request.headers("name")).thenReturn("Roger");
-        Mockito.when(request.headers()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-            }
-        });
+        Mockito.when(request.header("name")).thenReturn("Roger");
+        Map<String, String> headerMap2 = new HashMap<>();
+        headerMap2.put("name", "Roger");
+        Mockito.when(request.headerMap()).thenReturn(headerMap2);
 
         // Test
         final String result = inboundParamMatchServiceImpl.processParamMatch(request, "/person/{name}", responseBody, sanitizedUserCtxInboundPath, userId);
@@ -163,12 +157,11 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestParameter.name() +"(name)";
 
-        Mockito.when(request.queryParams("name")).thenReturn("Roger");
-        Mockito.when(request.queryParams()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-            }
-        });
+        Mockito.when(request.method()).thenReturn(HandlerType.GET);
+        Mockito.when(request.queryParam("name")).thenReturn("Roger");
+        Map<String, List<String>> paramMap1 = new HashMap<>();
+        paramMap1.put("name", List.of("Roger"));
+        Mockito.when(request.queryParamMap()).thenReturn(paramMap1);
 
         // Test
         final String result = inboundParamMatchServiceImpl.processParamMatch(request, "/person/{name}", responseBody, sanitizedUserCtxInboundPath, userId);
@@ -183,13 +176,11 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestParameter.name() +"(NAME)";
 
-        Mockito.when(request.requestMethod()).thenReturn(HttpMethod.GET.name());
-        Mockito.when(request.queryParams("name")).thenReturn("Roger");
-        Mockito.when(request.queryParams()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-            }
-        });
+        Mockito.when(request.method()).thenReturn(HandlerType.GET);
+        Mockito.when(request.queryParam("name")).thenReturn("Roger");
+        Map<String, List<String>> paramMap2 = new HashMap<>();
+        paramMap2.put("name", List.of("Roger"));
+        Mockito.when(request.queryParamMap()).thenReturn(paramMap2);
 
         // Test
         final String result = inboundParamMatchServiceImpl.processParamMatch(request, "/person/{name}", responseBody, sanitizedUserCtxInboundPath, userId);
@@ -200,6 +191,10 @@ public class InboundParamMatchServiceTest {
 
     @Test
     public void processParamMatch_reqParamNoMatch_Test() {
+
+        // Setup
+        Mockito.when(request.method()).thenReturn(HandlerType.GET);
+        Mockito.when(request.queryParamMap()).thenReturn(new HashMap<>());
 
         // Test
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestParameter.name() +"(name)";
@@ -256,16 +251,14 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"('name'), you are " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(GenDer) and are "  + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(\"age\") years old";
 
-        Mockito.when(request.headers("name")).thenReturn("Roger");
-        Mockito.when(request.headers("age")).thenReturn("21");
-        Mockito.when(request.headers("gender")).thenReturn("Male");
-        Mockito.when(request.headers()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-                add("age");
-                add("gender");
-            }
-        });
+        Mockito.when(request.header("name")).thenReturn("Roger");
+        Mockito.when(request.header("age")).thenReturn("21");
+        Mockito.when(request.header("gender")).thenReturn("Male");
+        Map<String, String> headerMap3 = new HashMap<>();
+        headerMap3.put("name", "Roger");
+        headerMap3.put("age", "21");
+        headerMap3.put("gender", "Male");
+        Mockito.when(request.headerMap()).thenReturn(headerMap3);
 
         Mockito.when(smockinUserService.getUserMode()).thenReturn(UserModeEnum.INACTIVE);
 
@@ -282,12 +275,10 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(name), you are " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(age) years old";
 
-        Mockito.when(request.headers("name")).thenReturn("Roger");
-        Mockito.when(request.headers()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-            }
-        });
+        Mockito.when(request.header("name")).thenReturn("Roger");
+        Map<String, String> headerMap4 = new HashMap<>();
+        headerMap4.put("name", "Roger");
+        Mockito.when(request.headerMap()).thenReturn(headerMap4);
 
         // Test
         final String result = inboundParamMatchServiceImpl.enrichWithInboundParamMatches(request, "/person/{name}", responseBody, sanitizedUserCtxInboundPath, userId);
@@ -302,12 +293,10 @@ public class InboundParamMatchServiceTest {
         // Setup
         final String responseBody = "Hello " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader.name() +"(name), you are " + ParamMatchTypeEnum.PARAM_PREFIX + "FOO(age) years old";
 
-        Mockito.when(request.headers("name")).thenReturn("Roger");
-        Mockito.when(request.headers()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-            }
-        });
+        Mockito.when(request.header("name")).thenReturn("Roger");
+        Map<String, String> headerMap5 = new HashMap<>();
+        headerMap5.put("name", "Roger");
+        Mockito.when(request.headerMap()).thenReturn(headerMap5);
 
         // Test
         final String result = inboundParamMatchServiceImpl.enrichWithInboundParamMatches(request, "/person/{name}", responseBody, sanitizedUserCtxInboundPath, userId);
@@ -480,9 +469,11 @@ public class InboundParamMatchServiceTest {
         final String responseBody = "Watcha " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.lookUpKvp +"(" + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestParameter + "(name)" + ")";
 
         // Mock
-        Mockito.when(request.queryParams())
-                .thenReturn(new HashSet<>(Arrays.asList("name")));
-        Mockito.when(request.queryParams(Mockito.anyString()))
+        Mockito.when(request.method()).thenReturn(HandlerType.GET);
+        Map<String, List<String>> paramMap3 = new HashMap<>();
+        paramMap3.put("name", List.of("Max"));
+        Mockito.when(request.queryParamMap()).thenReturn(paramMap3);
+        Mockito.when(request.queryParam(Mockito.anyString()))
                 .thenReturn("Max");
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong()))
                 .thenReturn(new UserKeyValueDataDTO(GeneralUtils.generateUUID(), "max", "Your name is Max"));
@@ -519,9 +510,10 @@ public class InboundParamMatchServiceTest {
         final String responseBody = "Watcha " + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.lookUpKvp +"(" + ParamMatchTypeEnum.PARAM_PREFIX + ParamMatchTypeEnum.requestHeader + "(name)" + ")";
 
         // Mock
-        Mockito.when(request.headers())
-                .thenReturn(new HashSet<>(Arrays.asList("name")));
-        Mockito.when(request.headers(Mockito.anyString()))
+        Map<String, String> headerMap6 = new HashMap<>();
+        headerMap6.put("name", "Max");
+        Mockito.when(request.headerMap()).thenReturn(headerMap6);
+        Mockito.when(request.header(Mockito.anyString()))
                 .thenReturn("Max");
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong()))
                 .thenReturn(new UserKeyValueDataDTO(GeneralUtils.generateUUID(), "max", "Your name is Max"));

@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
+import io.javalin.http.Context;
 
 import java.io.Serializable;
 import java.util.*;
@@ -53,11 +53,11 @@ public class StatefulServiceImpl implements StatefulService {
 
 
     @Override
-    public RestfulResponseDTO process(final Request req, final RestfulMock mock) {
+    public RestfulResponseDTO process(final Context ctx, final RestfulMock mock) {
 
         final RestfulMock parent = loadStatefulParent(mock);
 
-        final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), req.pathInfo(), mock.getCreatedBy().getCtxPath());
+        final String sanitizedInboundPath = GeneralUtils.sanitizeMultiUserPath(smockinUserService.getUserMode(), ctx.path(), mock.getCreatedBy().getCtxPath());
 
         final List<Map<String, Object>> mockStateContent = loadStateForMock(parent);
         final Map<String, String> pathVars = GeneralUtils.findAllPathVars(sanitizedInboundPath, mock.getPath());
@@ -68,22 +68,22 @@ public class StatefulServiceImpl implements StatefulService {
 
         try {
 
-            switch (RestMethodEnum.findByName(req.requestMethod())) {
+            switch (RestMethodEnum.findByName(ctx.method().name())) {
 
                 case GET:
                     statefulResponse = handleGet(dataId, mockStateContent, parent.getRestfulMockStatefulMeta());
                     break;
 
                 case POST:
-                    statefulResponse = handlePost(parent.getExtId(), req.body(), mockStateContent, parent.getRestfulMockStatefulMeta());
+                    statefulResponse = handlePost(parent.getExtId(), ctx.body(), mockStateContent, parent.getRestfulMockStatefulMeta());
                     break;
 
                 case PUT:
-                    statefulResponse = handlePut(dataId, parent.getExtId(), req.body(), mockStateContent, parent.getRestfulMockStatefulMeta());
+                    statefulResponse = handlePut(dataId, parent.getExtId(), ctx.body(), mockStateContent, parent.getRestfulMockStatefulMeta());
                     break;
 
                 case PATCH:
-                    statefulResponse = handlePatch(dataId, parent.getExtId(), req.body(), mockStateContent, parent.getRestfulMockStatefulMeta());
+                    statefulResponse = handlePatch(dataId, parent.getExtId(), ctx.body(), mockStateContent, parent.getRestfulMockStatefulMeta());
                     break;
 
                 case DELETE:

@@ -6,8 +6,8 @@ import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.mockito.Mockito;
 import org.springframework.http.HttpMethod;
-import spark.QueryParamsMap;
-import spark.Request;
+import io.javalin.http.Context;
+import io.javalin.http.HandlerType;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,25 +40,23 @@ public class GeneralUtilsTest {
     public void findHeaderIgnoreCaseTest() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        Mockito.when(req.headers("name")).thenReturn("Bob");
-        Mockito.when(req.headers("Age")).thenReturn("21");
-        Mockito.when(req.headers()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-                add("Age");
-            }
-        });
+        final Context ctx = Mockito.mock(Context.class);
+        Map<String, String> headerMap = new HashMap<>();
+        headerMap.put("name", "Bob");
+        headerMap.put("Age", "21");
+        Mockito.when(ctx.headerMap()).thenReturn(headerMap);
+        Mockito.when(ctx.header("name")).thenReturn("Bob");
+        Mockito.when(ctx.header("Age")).thenReturn("21");
 
         // Test
-        final String nameResult = GeneralUtils.findHeaderIgnoreCase(req, "NAME");
+        final String nameResult = GeneralUtils.findHeaderIgnoreCase(ctx, "NAME");
 
         // Assertions
         Assert.assertNotNull(nameResult);
         Assert.assertEquals("Bob", nameResult);
 
         // Test
-        final String ageResult = GeneralUtils.findHeaderIgnoreCase(req, "age");
+        final String ageResult = GeneralUtils.findHeaderIgnoreCase(ctx, "age");
 
         // Assertions
         Assert.assertNotNull(ageResult);
@@ -69,26 +67,24 @@ public class GeneralUtilsTest {
     public void findRequestParamIgnoreCaseTest() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        Mockito.when(req.requestMethod()).thenReturn(HttpMethod.GET.name());
-        Mockito.when(req.queryParams("name")).thenReturn("Bob");
-        Mockito.when(req.queryParams("Age")).thenReturn("21");
-        Mockito.when(req.queryParams()).thenReturn(new HashSet<String>() {
-            {
-                add("name");
-                add("Age");
-            }
-        });
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.GET);
+        Map<String, List<String>> paramMap = new HashMap<>();
+        paramMap.put("name", List.of("Bob"));
+        paramMap.put("Age", List.of("21"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(paramMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn("Bob");
+        Mockito.when(ctx.queryParam("Age")).thenReturn("21");
 
         // Test
-        final String nameResult = GeneralUtils.extractRequestParamByName(req, "NAME");
+        final String nameResult = GeneralUtils.extractRequestParamByName(ctx, "NAME");
 
         // Assertions
         Assert.assertNotNull(nameResult);
         Assert.assertEquals("Bob", nameResult);
 
         // Test
-        final String ageResult = GeneralUtils.extractRequestParamByName(req, "age");
+        final String ageResult = GeneralUtils.extractRequestParamByName(ctx, "age");
 
         // Assertions
         Assert.assertNotNull(ageResult);
@@ -99,11 +95,11 @@ public class GeneralUtilsTest {
     public void findPathVarIgnoreCase1Test() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        Mockito.when(req.pathInfo()).thenReturn("/person/Bob");
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.path()).thenReturn("/person/Bob");
 
         // Test
-        final String nameResult = GeneralUtils.findPathVarIgnoreCase(req.pathInfo(), "/person/{name}", "NAME");
+        final String nameResult = GeneralUtils.findPathVarIgnoreCase(ctx.path(), "/person/{name}", "NAME");
 
         // Assertions
         Assert.assertNotNull(nameResult);
@@ -114,11 +110,11 @@ public class GeneralUtilsTest {
     public void findPathVarIgnoreCase2Test() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        Mockito.when(req.pathInfo()).thenReturn("/person/21");
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.path()).thenReturn("/person/21");
 
         // Test
-        final String ageResult = GeneralUtils.findPathVarIgnoreCase(req.pathInfo(), "/person/{age}", "agE");
+        final String ageResult = GeneralUtils.findPathVarIgnoreCase(ctx.path(), "/person/{age}", "agE");
 
         // Assertions
         Assert.assertNotNull(ageResult);
@@ -331,17 +327,15 @@ public class GeneralUtilsTest {
     public void extractRequestParamByNameTest() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        final QueryParamsMap queryParamsMap = Mockito.mock(QueryParamsMap.class);
-        final Map<String, String[]> params = new HashMap<>();
-        params.put("name", new String[] { "bob" });
-
-        Mockito.when(req.requestMethod()).thenReturn(HttpMethod.PUT.name());
-        Mockito.when(queryParamsMap.toMap()).thenReturn(params);
-        Mockito.when(req.queryMap()).thenReturn(queryParamsMap);
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.PUT);
+        Map<String, List<String>> paramMap = new HashMap<>();
+        paramMap.put("name", List.of("bob"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(paramMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn("bob");
 
         // Test
-        final String result = GeneralUtils.extractRequestParamByName(req, "name");
+        final String result = GeneralUtils.extractRequestParamByName(ctx, "name");
 
         // Assertions
         Assert.assertNotNull(result);
@@ -353,15 +347,15 @@ public class GeneralUtilsTest {
     public void extractRequestParamByName_nullValue_Test() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        final QueryParamsMap queryParamsMap = Mockito.mock(QueryParamsMap.class);
-        final Map<String, String[]> params = new HashMap<>();
-        params.put("name", null);
-        Mockito.when(queryParamsMap.toMap()).thenReturn(params);
-        Mockito.when(req.queryMap()).thenReturn(queryParamsMap);
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.GET);
+        Map<String, List<String>> paramMap = new HashMap<>();
+        paramMap.put("name", List.of());
+        Mockito.when(ctx.queryParamMap()).thenReturn(paramMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn(null);
 
         // Test
-        final String result = GeneralUtils.extractRequestParamByName(req, "name");
+        final String result = GeneralUtils.extractRequestParamByName(ctx, "name");
 
         // Assertions
         Assert.assertNull(result);
@@ -372,13 +366,12 @@ public class GeneralUtilsTest {
     public void extractRequestParamByName_emptyMap_Test() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        final QueryParamsMap queryParamsMap = Mockito.mock(QueryParamsMap.class);
-        Mockito.when(queryParamsMap.toMap()).thenReturn(new HashMap<>());
-        Mockito.when(req.queryMap()).thenReturn(queryParamsMap);
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.GET);
+        Mockito.when(ctx.queryParamMap()).thenReturn(new HashMap<>());
 
         // Test
-        final String result = GeneralUtils.extractRequestParamByName(req, "name");
+        final String result = GeneralUtils.extractRequestParamByName(ctx, "name");
 
         // Assertions
         Assert.assertNull(result);
@@ -389,18 +382,17 @@ public class GeneralUtilsTest {
     public void extractAllRequestParamsTest() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        final QueryParamsMap queryParamsMap = Mockito.mock(QueryParamsMap.class);
-        final Map<String, String[]> params = new HashMap<>();
-        params.put("name", new String[] { "bob" });
-        params.put("age", new String[] { "27" });
-
-        Mockito.when(req.requestMethod()).thenReturn(HttpMethod.POST.name());
-        Mockito.when(queryParamsMap.toMap()).thenReturn(params);
-        Mockito.when(req.queryMap()).thenReturn(queryParamsMap);
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.POST);
+        Map<String, List<String>> paramMap = new HashMap<>();
+        paramMap.put("name", List.of("bob"));
+        paramMap.put("age", List.of("27"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(paramMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn("bob");
+        Mockito.when(ctx.queryParam("age")).thenReturn("27");
 
         // Test
-        final Map<String, String> results = GeneralUtils.extractAllRequestParams(req);
+        final Map<String, String> results = GeneralUtils.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(results);
@@ -414,18 +406,17 @@ public class GeneralUtilsTest {
     public void extractAllRequestParams_nullValues_Test() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        final QueryParamsMap queryParamsMap = Mockito.mock(QueryParamsMap.class);
-        final Map<String, String[]> params = new HashMap<>();
-        params.put("name", null);
-        params.put("age", null);
-
-        Mockito.when(req.requestMethod()).thenReturn(HttpMethod.PATCH.name());
-        Mockito.when(queryParamsMap.toMap()).thenReturn(params);
-        Mockito.when(req.queryMap()).thenReturn(queryParamsMap);
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.PATCH);
+        Map<String, List<String>> paramMap = new HashMap<>();
+        paramMap.put("name", List.of());
+        paramMap.put("age", List.of());
+        Mockito.when(ctx.queryParamMap()).thenReturn(paramMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn(null);
+        Mockito.when(ctx.queryParam("age")).thenReturn(null);
 
         // Test
-        final Map<String, String> results = GeneralUtils.extractAllRequestParams(req);
+        final Map<String, String> results = GeneralUtils.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(results);
@@ -439,13 +430,12 @@ public class GeneralUtilsTest {
     public void extractAllRequestParams_emptyMap_Test() {
 
         // Setup
-        final Request req = Mockito.mock(Request.class);
-        final QueryParamsMap queryParamsMap = Mockito.mock(QueryParamsMap.class);
-        Mockito.when(queryParamsMap.toMap()).thenReturn(new HashMap<>());
-        Mockito.when(req.queryMap()).thenReturn(queryParamsMap);
+        final Context ctx = Mockito.mock(Context.class);
+        Mockito.when(ctx.method()).thenReturn(HandlerType.GET);
+        Mockito.when(ctx.queryParamMap()).thenReturn(new HashMap<>());
 
         // Test
-        final Map<String, String> results = GeneralUtils.extractAllRequestParams(req);
+        final Map<String, String> results = GeneralUtils.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(results);

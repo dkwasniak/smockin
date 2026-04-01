@@ -17,7 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.AntPathMatcher;
-import spark.Request;
+import io.javalin.http.Context;
 
 import java.io.*;
 import java.nio.charset.Charset;
@@ -106,11 +106,11 @@ public final class GeneralUtils {
      * @returns String
      *
      */
-    public static String findHeaderIgnoreCase(final Request request, final String headerName) {
+    public static String findHeaderIgnoreCase(final Context ctx, final String headerName) {
 
-        for (String h : request.headers()) {
+        for (String h : ctx.headerMap().keySet()) {
             if (h.equalsIgnoreCase(headerName)) {
-                return request.headers(h);
+                return ctx.header(h);
             }
         }
 
@@ -407,50 +407,52 @@ public final class GeneralUtils {
         }
     }
 
-    public static String extractRequestParamByName(final Request req, final String fieldName) {
+    public static String extractRequestParamByName(final Context ctx, final String fieldName) {
 
-        return extractAllRequestParams(req)
-                .entrySet()
-                .stream()
-                .filter(p ->
-                        StringUtils.equalsIgnoreCase(fieldName, p.getKey()))
-                .map(p ->
-                        p.getValue())
-                .findFirst()
-                .orElse(null);
+        final Map<String, String> allParams = extractAllRequestParams(ctx);
+
+        for (Map.Entry<String, String> entry : allParams.entrySet()) {
+            if (StringUtils.equalsIgnoreCase(fieldName, entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
     }
 
-    public static Map<String, String> extractAllRequestParams(final Request req) {
+    public static Map<String, String> extractAllRequestParams(final Context ctx) {
 
-        if (!StringUtils.equalsIgnoreCase(HttpMethod.POST.name(), req.requestMethod())
-                && !StringUtils.equalsIgnoreCase(HttpMethod.PUT.name(), req.requestMethod())
-                && !StringUtils.equalsIgnoreCase(HttpMethod.PATCH.name(), req.requestMethod())) {
+        if (!StringUtils.equalsIgnoreCase(HttpMethod.POST.name(), ctx.method().name())
+                && !StringUtils.equalsIgnoreCase(HttpMethod.PUT.name(), ctx.method().name())
+                && !StringUtils.equalsIgnoreCase(HttpMethod.PATCH.name(), ctx.method().name())) {
 
-            if (req.queryParams().isEmpty()) {
+            if (ctx.queryParamMap().isEmpty()) {
                 return new HashMap<>();
             }
 
-            return req.queryParams()
+            return ctx.queryParamMap()
+                    .keySet()
                     .stream()
-                    .collect(Collectors.toMap(k -> k, k -> req.queryParams(k)));
+                    .collect(HashMap::new,
+                            (m, k) -> m.put(k, ctx.queryParam(k)),
+                            HashMap::putAll);
         }
 
-        final Map<String, String> allParams = req.queryMap()
-                .toMap()
+        final Map<String, String> allParams = ctx.queryParamMap()
                 .entrySet()
                 .stream()
                 .collect(HashMap::new,
                         (m,v) ->
-                            m.put(v.getKey(), (v.getValue() != null && v.getValue().length != 0) ? v.getValue()[0] : null),
+                            m.put(v.getKey(), (v.getValue() != null && !v.getValue().isEmpty()) ? v.getValue().get(0) : null),
                         HashMap::putAll);
 
 
-        if (req.contentType() != null
-                && (req.contentType().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-                ||  req.contentType().contains(MediaType.MULTIPART_FORM_DATA_VALUE))) {
+        if (ctx.contentType() != null
+                && (ctx.contentType().contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+                ||  ctx.contentType().contains(MediaType.MULTIPART_FORM_DATA_VALUE))) {
 
-            if (req.body() != null && req.body().contains("=")) {
-                allParams.putAll(URLEncodedUtils.parse(req.body(), Charset.defaultCharset())
+            if (ctx.body() != null && ctx.body().contains("=")) {
+                allParams.putAll(URLEncodedUtils.parse(ctx.body(), Charset.defaultCharset())
                                     .stream()
                                     .collect(HashMap::new, (m,v) -> m.put(v.getName(), v.getValue()), HashMap::putAll));
             }

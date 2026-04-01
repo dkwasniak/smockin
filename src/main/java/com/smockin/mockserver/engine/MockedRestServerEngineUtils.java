@@ -27,8 +27,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import spark.Request;
-import spark.Response;
+import io.javalin.http.Context;
 
 import java.io.IOException;
 import java.util.*;
@@ -77,31 +76,28 @@ public class MockedRestServerEngineUtils {
     private ProxyMappingCache proxyMappingCache;
 
 
-    public Optional<String> loadMockedResponse(final Request request,
-                                               final Response response,
+    public Optional<String> loadMockedResponse(final Context ctx,
                                                final boolean isMultiUserMode,
                                                final boolean isProxyMode) {
 
         logger.debug("loadMockedResponse called");
 
-        debugInboundRequest(request);
+        debugInboundRequest(ctx);
 
         return (isProxyMode)
             ? handleProxyInterceptorMode(isMultiUserMode,
-                                         request,
-                                         response)
-            : handleMockLookup(request, response, isMultiUserMode, false);
+                                         ctx)
+            : handleMockLookup(ctx, isMultiUserMode, false);
     }
 
-    Optional<String> handleMockLookup(final Request request,
-                           final Response response,
+    Optional<String> handleMockLookup(final Context ctx,
                            final boolean isMultiUserMode,
                            final boolean ignore404MockResponses) {
         logger.debug("handleMockLookup called");
 
         try {
 
-            RestMethodEnum method = RestMethodEnum.findByName(request.requestMethod());
+            RestMethodEnum method = RestMethodEnum.findByName(ctx.method().name());
 
             if (RestMethodEnum.HEAD.equals(method)) {
                 method = RestMethodEnum.GET;
@@ -110,7 +106,7 @@ public class MockedRestServerEngineUtils {
             final RestfulMock mock = (isMultiUserMode)
                     ? restfulMockDAO.findActiveByMethodAndPathPatternAndTypesForMultiUser(
                     method,
-                    request.pathInfo(),
+                    ctx.path(),
                     Arrays.asList(RestMockTypeEnum.PROXY_SSE,
                             RestMockTypeEnum.PROXY_HTTP,
                             RestMockTypeEnum.SEQ,
@@ -119,7 +115,7 @@ public class MockedRestServerEngineUtils {
                             RestMockTypeEnum.CUSTOM_JS))
                     : restfulMockDAO.findActiveByMethodAndPathPatternAndTypesForSingleUser(
                     method,
-                    request.pathInfo(),
+                    ctx.path(),
                     Arrays.asList(RestMockTypeEnum.PROXY_SSE,
                             RestMockTypeEnum.PROXY_HTTP,
                             RestMockTypeEnum.SEQ,
@@ -135,12 +131,12 @@ public class MockedRestServerEngineUtils {
             debugLoadedMock(mock);
 
             if (RestMockTypeEnum.PROXY_SSE.equals(mock.getMockType())) {
-                return Optional.of(processSSERequest(mock, request, response));
+                return Optional.of(processSSERequest(mock, ctx));
             }
 
             removeSuspendedResponses(mock);
 
-            final String responseBody = processRequest(mock, request, response, ignore404MockResponses);
+            final String responseBody = processRequest(mock, ctx, ignore404MockResponses);
 
             // Yuk! Bit of a hacky work around returning null from processRequest, so as to distinguish an ignored 404...
             return (responseBody != null)
@@ -148,14 +144,14 @@ public class MockedRestServerEngineUtils {
                     : Optional.empty();
 
         } catch (Exception ex) {
-            return handleFailure(ex, response);
+            return handleFailure(ex, ctx);
         }
 
     }
 
-    private String amendPathForMultiUser(final Request request, final boolean isMultiUserMode) {
+    private String amendPathForMultiUser(final Context ctx, final boolean isMultiUserMode) {
 
-        String inboundPath = request.pathInfo();
+        String inboundPath = ctx.path();
 
         if (isMultiUserMode) {
 
@@ -183,15 +179,14 @@ public class MockedRestServerEngineUtils {
     }
 
     Optional<String> handleProxyInterceptorMode(final boolean isMultiUserMode,
-                                                final Request request,
-                                                final Response response) {
+                                                final Context ctx) {
 
         logger.debug("handleProxyInterceptorMode called");
 
         try {
 
-            final String amendedInboundPath = amendPathForMultiUser(request, isMultiUserMode);
-            final String inboundPath = request.pathInfo();
+            final String amendedInboundPath = amendPathForMultiUser(ctx, isMultiUserMode);
+            final String inboundPath = ctx.path();
 
             final String userCtxPath = (!StringUtils.equals(inboundPath, amendedInboundPath))
                 ? extractMultiUserCtxPathSegment(inboundPath)
@@ -209,14 +204,14 @@ public class MockedRestServerEngineUtils {
 
             // No relevant proxy mappings were found for the inbound path, so skip this section and just look for a mock.
             if (proxyDownstreamURL == null) {
-                return handleMockLookup(request, response, isMultiUserMode, false);
+                return handleMockLookup(ctx, isMultiUserMode, false);
             }
 
             // ACTIVE Mode...
             if (configOpt.isPresent() && ProxyModeTypeEnum.ACTIVE.equals(configOpt.get().getProxyModeType())) {
 
                 // Look for mock...
-                final Optional<String> result = handleMockLookup(request, response, isMultiUserMode, !configOpt.get().isDoNotForwardWhen404Mock());
+                final Optional<String> result = handleMockLookup(ctx, isMultiUserMode, !configOpt.get().isDoNotForwardWhen404Mock());
 
                 if (result.isPresent()) {
                     return result;
@@ -224,13 +219,13 @@ public class MockedRestServerEngineUtils {
 
                 // Make downstream client call of no mock was found
                 return handleClientDownstreamProxyCallResponse(
-                        executeClientDownstreamProxyCall(amendedInboundPath, request, proxyDownstreamURL),
-                        response,
+                        executeClientDownstreamProxyCall(amendedInboundPath, ctx, proxyDownstreamURL),
+                        ctx,
                         proxyDownstreamURL);
             }
 
             // Default to REACTIVE mode...
-            final Optional<HttpClientResponseDTO> httpClientResponse = executeClientDownstreamProxyCall(amendedInboundPath, request, proxyDownstreamURL);
+            final Optional<HttpClientResponseDTO> httpClientResponse = executeClientDownstreamProxyCall(amendedInboundPath, ctx, proxyDownstreamURL);
 
             if (!httpClientResponse.isPresent()) {
                 return Optional.empty();
@@ -239,20 +234,20 @@ public class MockedRestServerEngineUtils {
             if (HttpStatus.NOT_FOUND.value() == httpClientResponse.get().getStatus()) {
 
                 // Look for mock substitute if downstream client returns a 404
-                return handleMockLookup(request, response, isMultiUserMode, false);
+                return handleMockLookup(ctx, isMultiUserMode, false);
             }
 
             // Pass back downstream client response directly back to caller
-            return handleClientDownstreamProxyCallResponse(httpClientResponse, response, proxyDownstreamURL);
+            return handleClientDownstreamProxyCallResponse(httpClientResponse, ctx, proxyDownstreamURL);
 
         } catch (Exception ex) {
-            return handleFailure(ex, response);
+            return handleFailure(ex, ctx);
         }
 
     }
 
     Optional<HttpClientResponseDTO> executeClientDownstreamProxyCall(final String inboundPath,
-                                                                     final Request request,
+                                                                     final Context ctx,
                                                                      final String proxyDownstreamURL) {
 
         if (proxyDownstreamURL == null) {
@@ -265,8 +260,8 @@ public class MockedRestServerEngineUtils {
 
         final HttpClientCallDTO httpClientCallDTO = new HttpClientCallDTO();
 
-        final String reqParams = (request.queryString() != null)
-                ? ( "?" + request.queryString() )
+        final String reqParams = (ctx.queryString() != null)
+                ? ( "?" + ctx.queryString() )
                 : "";
 
         if (logger.isDebugEnabled()) {
@@ -274,13 +269,12 @@ public class MockedRestServerEngineUtils {
         }
 
         httpClientCallDTO.setUrl(proxyDownstreamURL + inboundPath + reqParams);
-        httpClientCallDTO.setMethod(RestMethodEnum.valueOf(request.requestMethod()));
-        httpClientCallDTO.setBody(request.body());
+        httpClientCallDTO.setMethod(RestMethodEnum.valueOf(ctx.method().name()));
+        httpClientCallDTO.setBody(ctx.body());
 
-        httpClientCallDTO.setHeaders(request
-                .headers()
+        httpClientCallDTO.setHeaders(ctx.headerMap().keySet()
                 .stream()
-                .collect(Collectors.toMap(k -> k, v -> request.headers(v))));
+                .collect(Collectors.toMap(k -> k, v -> ctx.header(v))));
 
         httpClientCallDTO.getHeaders().put(HttpHeaders.HOST, sanitizeHost(proxyDownstreamURL));
 
@@ -303,7 +297,7 @@ public class MockedRestServerEngineUtils {
     }
 
     Optional<String> handleClientDownstreamProxyCallResponse(final Optional<HttpClientResponseDTO> httpClientResponseOpt,
-                                                             final Response response,
+                                                             final Context ctx,
                                                              final String proxyDownstreamURL) {
 
         if (!httpClientResponseOpt.isPresent()) {
@@ -316,20 +310,21 @@ public class MockedRestServerEngineUtils {
             logger.debug("Downstream client response status: " + httpClientResponse.getStatus());
         }
 
-        response.status(httpClientResponse.getStatus());
-        response.type(httpClientResponse.getContentType());
-        response.body(httpClientResponse.getBody());
+        ctx.status(httpClientResponse.getStatus());
+        if (httpClientResponse.getContentType() != null) {
+            ctx.contentType(httpClientResponse.getContentType());
+        }
+        ctx.result(httpClientResponse.getBody() != null ? httpClientResponse.getBody() : "");
 
-        applyHeadersToResponse(httpClientResponse.getHeaders(), response);
+        applyHeadersToResponse(httpClientResponse.getHeaders(), ctx);
 
-        response.header(GeneralUtils.PROXIED_DOWNSTREAM_URL_HEADER, proxyDownstreamURL);
+        ctx.header(GeneralUtils.PROXIED_DOWNSTREAM_URL_HEADER, proxyDownstreamURL);
 
         return Optional.of(StringUtils.defaultIfBlank(httpClientResponse.getBody(),""));
     }
 
     String processRequest(final RestfulMock mock,
-                          final Request req,
-                          final Response res,
+                          final Context ctx,
                           final boolean ignore404MockResponses) {
         logger.debug("processRequest called");
 
@@ -337,16 +332,16 @@ public class MockedRestServerEngineUtils {
 
         switch (mock.getMockType()) {
             case RULE:
-                outcome = ruleEngine.process(req, mock.getRules());
+                outcome = ruleEngine.process(ctx, mock.getRules());
                 break;
             case PROXY_HTTP:
-                outcome = proxyService.waitForResponse(req.pathInfo(), mock);
+                outcome = proxyService.waitForResponse(ctx.path(), mock);
                 break;
             case CUSTOM_JS:
-                outcome = javaScriptResponseHandler.executeUserResponse(req, mock);
+                outcome = javaScriptResponseHandler.executeUserResponse(ctx, mock);
                 break;
             case STATEFUL:
-                outcome = statefulService.process(req, mock);
+                outcome = statefulService.process(ctx, mock);
                 break;
             case SEQ:
             default:
@@ -365,20 +360,22 @@ public class MockedRestServerEngineUtils {
 
         debugOutcome(outcome);
 
-        res.status(outcome.getHttpStatusCode());
-        res.type(outcome.getResponseContentType());
+        ctx.status(outcome.getHttpStatusCode());
+        if (outcome.getResponseContentType() != null) {
+            ctx.contentType(outcome.getResponseContentType());
+        }
 
         // Apply any response headers
-        applyHeadersToResponse(outcome.getHeaders(), res);
+        applyHeadersToResponse(outcome.getHeaders(), ctx);
 
         String response;
 
         try {
-            response = inboundParamMatchService.enrichWithInboundParamMatches(req, mock.getPath(), outcome.getResponseBody(), mock.getCreatedBy().getCtxPath(), mock.getCreatedBy().getId());
+            response = inboundParamMatchService.enrichWithInboundParamMatches(ctx, mock.getPath(), outcome.getResponseBody(), mock.getCreatedBy().getCtxPath(), mock.getCreatedBy().getId());
             handleLatency(mock);
         } catch (InboundParamMatchException e) {
             logger.error(e.getMessage());
-            res.status(HttpStatus.INTERNAL_SERVER_ERROR.value());
+            ctx.status(HttpStatus.INTERNAL_SERVER_ERROR.value());
             response = e.getMessage();
         }
 
@@ -425,10 +422,10 @@ public class MockedRestServerEngineUtils {
 
     }
 
-    String processSSERequest(final RestfulMock mock, final Request req, final Response res) {
+    String processSSERequest(final RestfulMock mock, final Context ctx) {
 
         try {
-            serverSideEventService.register(buildUserPath(mock), mock.getSseHeartBeatInMillis(), mock.isProxyPushIdOnConnect(), req, res);
+            serverSideEventService.register(buildUserPath(mock), mock.getSseHeartBeatInMillis(), mock.isProxyPushIdOnConnect(), ctx);
         } catch (IOException e) {
             logger.error("Error registering SEE client", e);
         }
@@ -462,11 +459,11 @@ public class MockedRestServerEngineUtils {
         return mock.getPath();
     }
 
-    Optional<String> handleFailure(final Exception ex, final Response response) {
+    Optional<String> handleFailure(final Exception ex, final Context ctx) {
         logger.error("Error processing mock request", ex);
 
-        response.status(HttpStatus.INTERNAL_SERVER_ERROR.value());
-        response.body((ex instanceof IllegalArgumentException) ? ex.getMessage() : "Oops, looks like something went wrong with this mock!");
+        ctx.status(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        ctx.result((ex instanceof IllegalArgumentException) ? ex.getMessage() : "Oops, looks like something went wrong with this mock!");
 
         return Optional.of("Oops"); // this message does not come through to caller when it is a 500 for some reason, so setting in body above
 
@@ -499,37 +496,37 @@ public class MockedRestServerEngineUtils {
     }
 
     void applyHeadersToResponse(final Map<String, String> headers,
-                              final Response response) {
+                              final Context ctx) {
 
         headers.entrySet()
             .forEach(e ->
-                response.header(e.getKey(), e.getValue()));
+                ctx.header(e.getKey(), e.getValue()));
 
     }
 
-    Map<String, String> extractResponseHeadersAsMap(final Response response) {
+    Map<String, String> extractResponseHeadersAsMap(final Context ctx) {
 
-        return response
-                .raw()
+        return ctx
+                .res()
                 .getHeaderNames()
                 .stream()
-                .collect(Collectors.toMap(h -> h, h -> response.raw().getHeader(h)));
+                .collect(Collectors.toMap(h -> h, h -> ctx.res().getHeader(h)));
     }
 
-    private void debugInboundRequest(final Request request) {
+    private void debugInboundRequest(final Context ctx) {
 
         if (logger.isDebugEnabled()) {
 
-            logger.debug("inbound request url: " + request.url());
-            logger.debug("inbound request query string : " + request.queryString());
-            logger.debug("inbound request method: " + request.requestMethod());
-            logger.debug("inbound request path: " + request.pathInfo());
-            logger.debug("inbound request body: " + request.body());
+            logger.debug("inbound request url: " + ctx.url());
+            logger.debug("inbound request query string : " + ctx.queryString());
+            logger.debug("inbound request method: " + ctx.method().name());
+            logger.debug("inbound request path: " + ctx.path());
+            logger.debug("inbound request body: " + ctx.body());
 
-            request.headers()
+            ctx.headerMap().keySet()
                 .stream()
                 .forEach(h ->
-                    logger.debug("inbound request header: " + h + " = " + request.headers(h)));
+                    logger.debug("inbound request header: " + h + " = " + ctx.header(h)));
         }
 
     }

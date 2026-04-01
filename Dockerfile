@@ -1,27 +1,25 @@
 # Dockerfile
-
 #
-# docker build -t smockin-2203 .
-# docker tag smockin-2203 mgallina/smockin:2203
-# docker push mgallina/smockin:2203
-# docker run --name smockin -d -p 8000:8000 -p 8001:8001 -p 8002:8002 -p 8003:8003 mgallina/smockin:2203
+# docker compose up -d
 #
 
-FROM eclipse-temurin:11-jre
-ARG APP_VERSION_ARG='2.20.3'
-RUN mkdir /app
-RUN mkdir /app/db
-RUN mkdir /app/db/data
-RUN mkdir /app/db/driver
-RUN mkdir /app/log
+# Stage 1: Build
+FROM eclipse-temurin:17-jdk AS build
+WORKDIR /build
+COPY pom.xml .
+COPY src ./src
+COPY install ./install
+RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
+RUN mvn clean package -DskipTests
+
+# Stage 2: Runtime
+FROM eclipse-temurin:17-jre
+ARG APP_VERSION_ARG='2.21.0'
+RUN mkdir -p /app/log
 WORKDIR /app
-COPY install/h2-2.3.232.jar /app/db/driver/h2-2.3.232.jar
-COPY install/smockin_db.mv.db /app/db/data/smockin_db.mv.db
-COPY target/smockin-${APP_VERSION_ARG}.jar /app/smockin-${APP_VERSION_ARG}.jar
+COPY --from=build /root/.m2/repository/com/h2database/h2/2.4.240/h2-2.4.240.jar /app/h2.jar
+COPY --from=build /build/target/smockin-${APP_VERSION_ARG}.jar /app/smockin-${APP_VERSION_ARG}.jar
 COPY launch.sh /app/launch.sh
-EXPOSE 8000
-EXPOSE 8001
-EXPOSE 8002
-EXPOSE 8003
-RUN ["chmod", "+x", "/app/launch.sh"]
+EXPOSE 8000 8001 8002 8003
+RUN chmod +x /app/launch.sh
 ENTRYPOINT ["/app/launch.sh"]

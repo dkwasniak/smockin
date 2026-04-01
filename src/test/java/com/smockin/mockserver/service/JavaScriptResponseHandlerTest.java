@@ -20,13 +20,10 @@ import org.mockito.Mockito;
 import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.springframework.http.MediaType;
-import spark.Request;
+import io.javalin.http.Context;
 
 import javax.script.ScriptException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
+import java.util.*;;
 
 @RunWith(MockitoJUnitRunner.class)
 public class JavaScriptResponseHandlerTest {
@@ -45,7 +42,7 @@ public class JavaScriptResponseHandlerTest {
     public ExpectedException expect = ExpectedException.none();
 
     @Mock
-    private Request req;
+    private Context ctx;
 
 
     @Test
@@ -163,13 +160,16 @@ public class JavaScriptResponseHandlerTest {
     public void extractAllRequestParamsTest() {
 
         // Setup
-        Mockito.when(req.contentType()).thenReturn(MediaType.APPLICATION_JSON_VALUE);
-        Mockito.when(req.queryParams()).thenReturn(new HashSet<>(Arrays.asList("name", "age")));
-        Mockito.when(req.queryParams("name")).thenReturn("joe");
-        Mockito.when(req.queryParams("age")).thenReturn("35");
+        Mockito.when(ctx.contentType()).thenReturn(MediaType.APPLICATION_JSON_VALUE);
+        Map<String, List<String>> paramMap = new HashMap<>();
+        paramMap.put("name", List.of("joe"));
+        paramMap.put("age", List.of("35"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(paramMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn("joe");
+        Mockito.when(ctx.queryParam("age")).thenReturn("35");
 
         // Test
-        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(req);
+        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(params);
@@ -182,11 +182,11 @@ public class JavaScriptResponseHandlerTest {
     public void extractAllRequestParams_formPost_Test() {
 
         // Setup
-        Mockito.when(req.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
-        Mockito.when(req.body()).thenReturn("name=jane;age=28;");
+        Mockito.when(ctx.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
+        Mockito.when(ctx.body()).thenReturn("name=jane;age=28;");
 
         // Test
-        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(req);
+        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(params);
@@ -199,11 +199,11 @@ public class JavaScriptResponseHandlerTest {
     public void extractAllRequestParams_formWithRandomReqBody_Test() {
 
         // Setup
-        Mockito.when(req.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
-        Mockito.when(req.body()).thenReturn("asdasdasdasd");
+        Mockito.when(ctx.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
+        Mockito.when(ctx.body()).thenReturn("asdasdasdasd");
 
         // Test
-        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(req);
+        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(params);
@@ -215,11 +215,11 @@ public class JavaScriptResponseHandlerTest {
     public void extractAllRequestParams_formWithRandomReqBody2_Test() {
 
         // Setup
-        Mockito.when(req.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
-        Mockito.when(req.body()).thenReturn("a;b=;c;;");
+        Mockito.when(ctx.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
+        Mockito.when(ctx.body()).thenReturn("a;b=;c;;");
 
         // Test
-        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(req);
+        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(params);
@@ -233,11 +233,11 @@ public class JavaScriptResponseHandlerTest {
     public void extractAllRequestParams_formWithBlankReqBody_Test() {
 
         // Setup
-        Mockito.when(req.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
-        Mockito.when(req.body()).thenReturn(" ");
+        Mockito.when(ctx.contentType()).thenReturn(MediaType.APPLICATION_FORM_URLENCODED_VALUE);
+        Mockito.when(ctx.body()).thenReturn(" ");
 
         // Test
-        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(req);
+        final Map<String, String> params = javaScriptResponseHandler.extractAllRequestParams(ctx);
 
         // Assertions
         Assert.assertNotNull(params);
@@ -266,19 +266,25 @@ public class JavaScriptResponseHandlerTest {
     public void populateRequestObjectWithInboundTest() {
 
         // Setup
-        Mockito.when(req.headers()).thenReturn(new HashSet<>(Arrays.asList("one", "two")));
-        Mockito.when(req.headers("one")).thenReturn("1");
-        Mockito.when(req.headers("two")).thenReturn("2");
-        Mockito.when(req.pathInfo()).thenReturn("/hello/james");
-        Mockito.when(req.body()).thenReturn("xxx");
-        Mockito.when(req.queryParams()).thenReturn(new HashSet<>(Arrays.asList("name", "age")));
-        Mockito.when(req.queryParams("name")).thenReturn("joe");
-        Mockito.when(req.queryParams("age")).thenReturn("35");
+        Map<String, String> headerMap = new LinkedHashMap<>();
+        headerMap.put("one", "1");
+        headerMap.put("two", "2");
+        Mockito.when(ctx.headerMap()).thenReturn(headerMap);
+        Mockito.when(ctx.header("one")).thenReturn("1");
+        Mockito.when(ctx.header("two")).thenReturn("2");
+        Mockito.when(ctx.path()).thenReturn("/hello/james");
+        Mockito.when(ctx.body()).thenReturn("xxx");
+        Map<String, List<String>> qpMap = new HashMap<>();
+        qpMap.put("name", List.of("joe"));
+        qpMap.put("age", List.of("35"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(qpMap);
+        Mockito.when(ctx.queryParam("name")).thenReturn("joe");
+        Mockito.when(ctx.queryParam("age")).thenReturn("35");
 
         Mockito.when(smockinUserService.getUserMode()).thenReturn(UserModeEnum.INACTIVE);
 
         // Test
-        final String result = javaScriptResponseHandler.populateRequestObjectWithInbound(req, "/hello/{name}", "");
+        final String result = javaScriptResponseHandler.populateRequestObjectWithInbound(ctx, "/hello/{name}", "");
 
         // Assertions
         Assert.assertNotNull(result);
@@ -289,19 +295,25 @@ public class JavaScriptResponseHandlerTest {
     public void populateRequestObjectWithInbound_multiUserCtx_Test() {
 
         // Setup
-        Mockito.when(req.headers()).thenReturn(new HashSet<>(Arrays.asList("one", "two")));
-        Mockito.when(req.headers("one")).thenReturn("1");
-        Mockito.when(req.headers("two")).thenReturn("2");
-        Mockito.when(req.pathInfo()).thenReturn("/bob/hello/james");
-        Mockito.when(req.body()).thenReturn("xxx");
-        Mockito.when(req.queryParams()).thenReturn(new HashSet<>(Arrays.asList("name", "age")));
-        Mockito.when(req.queryParams("name")).thenReturn("joe");
-        Mockito.when(req.queryParams("age")).thenReturn("35");
+        Map<String, String> headerMap2 = new LinkedHashMap<>();
+        headerMap2.put("one", "1");
+        headerMap2.put("two", "2");
+        Mockito.when(ctx.headerMap()).thenReturn(headerMap2);
+        Mockito.when(ctx.header("one")).thenReturn("1");
+        Mockito.when(ctx.header("two")).thenReturn("2");
+        Mockito.when(ctx.path()).thenReturn("/bob/hello/james");
+        Mockito.when(ctx.body()).thenReturn("xxx");
+        Map<String, List<String>> qpMap2 = new HashMap<>();
+        qpMap2.put("name", List.of("joe"));
+        qpMap2.put("age", List.of("35"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(qpMap2);
+        Mockito.when(ctx.queryParam("name")).thenReturn("joe");
+        Mockito.when(ctx.queryParam("age")).thenReturn("35");
 
         Mockito.when(smockinUserService.getUserMode()).thenReturn(UserModeEnum.ACTIVE);
 
         // Test
-        final String result = javaScriptResponseHandler.populateRequestObjectWithInbound(req, "/hello/{name}", "/bob");
+        final String result = javaScriptResponseHandler.populateRequestObjectWithInbound(ctx, "/hello/{name}", "/bob");
 
         // Assertions
         Assert.assertNotNull(result);
@@ -376,7 +388,7 @@ public class JavaScriptResponseHandlerTest {
         mock.setJavaScriptHandler(javaScriptHandler);
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -408,7 +420,7 @@ public class JavaScriptResponseHandlerTest {
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong())).thenReturn(userKeyValueDataDTO);
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -440,10 +452,10 @@ public class JavaScriptResponseHandlerTest {
         final UserKeyValueDataDTO userKeyValueDataDTO = new UserKeyValueDataDTO();
         userKeyValueDataDTO.setValue("XXX");
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong())).thenReturn(userKeyValueDataDTO);
-        Mockito.when(req.body()).thenReturn("hello");
+        Mockito.when(ctx.body()).thenReturn("hello");
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -475,10 +487,10 @@ public class JavaScriptResponseHandlerTest {
         final UserKeyValueDataDTO userKeyValueDataDTO = new UserKeyValueDataDTO();
         userKeyValueDataDTO.setValue("XXX");
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong())).thenReturn(userKeyValueDataDTO);
-        Mockito.when(req.pathInfo()).thenReturn("/hello/bob");
+        Mockito.when(ctx.path()).thenReturn("/hello/bob");
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -510,11 +522,13 @@ public class JavaScriptResponseHandlerTest {
         final UserKeyValueDataDTO userKeyValueDataDTO = new UserKeyValueDataDTO();
         userKeyValueDataDTO.setValue("XXX");
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong())).thenReturn(userKeyValueDataDTO);
-        Mockito.when(req.queryParams()).thenReturn(new HashSet<String>() { { add("my-first-name"); } });
-        Mockito.when(req.queryParams(Mockito.anyString())).thenReturn("Harry");
+        Map<String, List<String>> pMap = new HashMap<>();
+        pMap.put("my-first-name", List.of("Harry"));
+        Mockito.when(ctx.queryParamMap()).thenReturn(pMap);
+        Mockito.when(ctx.queryParam(Mockito.anyString())).thenReturn("Harry");
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -546,11 +560,13 @@ public class JavaScriptResponseHandlerTest {
         final UserKeyValueDataDTO userKeyValueDataDTO = new UserKeyValueDataDTO();
         userKeyValueDataDTO.setValue("XXX");
         Mockito.when(userKeyValueDataService.loadByKey(Mockito.anyString(), Mockito.anyLong())).thenReturn(userKeyValueDataDTO);
-        Mockito.when(req.headers()).thenReturn(new HashSet<String>() { { add("myLastName"); } });
-        Mockito.when(req.headers(Mockito.anyString())).thenReturn("Potter");
+        Map<String, String> hdrMap = new HashMap<>();
+        hdrMap.put("myLastName", "Potter");
+        Mockito.when(ctx.headerMap()).thenReturn(hdrMap);
+        Mockito.when(ctx.header(Mockito.anyString())).thenReturn("Potter");
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -578,7 +594,7 @@ public class JavaScriptResponseHandlerTest {
         mock.setJavaScriptHandler(javaScriptHandler);
 
         // Test
-        final String result = javaScriptResponseHandler.populateKVPs(req, mock);
+        final String result = javaScriptResponseHandler.populateKVPs(ctx, mock);
 
         // Assertions
         Assert.assertNotNull(result);
@@ -610,7 +626,7 @@ public class JavaScriptResponseHandlerTest {
         mock.setJavaScriptHandler(javaScriptHandler);
 
         // Test
-        javaScriptResponseHandler.populateKVPs(req, mock);
+        javaScriptResponseHandler.populateKVPs(ctx, mock);
     }
 
     @Test
@@ -637,7 +653,7 @@ public class JavaScriptResponseHandlerTest {
         mock.setJavaScriptHandler(javaScriptHandler);
 
         // Test
-        javaScriptResponseHandler.populateKVPs(req, mock);
+        javaScriptResponseHandler.populateKVPs(ctx, mock);
 
     }
 
